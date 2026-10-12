@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Fictional demo output (TEST-NET address). Port 21 did not answer on the second pass. -->
+<nmaprun scanner="nmap" args="nmap -Pn -sT -sV --version-light -T3 -p 21,22,80,443,3306,8443 -oX - 192.0.2.10" version="7.94">
+  <host><status state="up"/><address addr="192.0.2.10" addrtype="ipv4"/>
+    <ports>
+      <port protocol="tcp" portid="21"><state state="filtered"/><service name="ftp"/></port>
+      <port protocol="tcp" portid="22"><state state="open"/><service name="ssh" product="OpenSSH" version="8.2p1 Ubuntu 4ubuntu0.5"/></port>
+      <port protocol="tcp" portid="80"><state state="open"/><service name="http" product="Apache httpd" version="2.4.41"/></port>
+      <port protocol="tcp" portid="443"><state state="open"/><service name="http" product="Apache httpd" version="2.4.41" tunnel="ssl"/></port>
+      <port protocol="tcp" portid="3306"><state state="open"/><service name="mysql" product="MySQL" version="5.7.33-0ubuntu0.18.04.1"/></port>
+      <port protocol="tcp" portid="8443"><state state="open"/><service name="http" product="nginx" version="1.18.0" tunnel="ssl"/></port>
+    </ports>
+  </host>
+</nmaprun>

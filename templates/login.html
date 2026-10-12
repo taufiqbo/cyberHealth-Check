@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card narrow">
+  <h1>Sign in</h1>
+  <form method="post">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>Email <input type="email" name="email" required autofocus autocomplete="username"></label>
+    <label>Password <input type="password" name="password" required autocomplete="current-password"></label>
+    <button>Sign in</button>
+  </form>
+  {% if DEMO %}
+  <p class="muted">Demo logins: admin@demo.example / demo-admin, analyst@demo.example / demo-analyst,
+    reviewer@demo.example / demo-reviewer, client@client-example.com / demo-client.</p>
+  {% endif %}
+</section>
+{% endblock %}

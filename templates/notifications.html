@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Notifications</h1>
+<table class="list">
+  <thead><tr><th>When (UTC)</th><th>Kind</th><th>To</th><th>Subject</th><th>Delivery</th></tr></thead>
+  {% for n in rows %}
+  <tr><td>{{ n.created_at[:16].replace('T', ' ') }}</td><td>{{ n.kind }}</td><td>{{ n.recipient }}</td>
+    <td><details><summary>{{ n.subject }}</summary><pre>{{ n.body }}</pre></details></td>
+    <td>{{ n.delivery }}{% if n.error %}<br><span class="muted">{{ n.error }}</span>{% endif %}</td></tr>
+  {% else %}
+  <tr><td colspan="5" class="muted">No notifications yet.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

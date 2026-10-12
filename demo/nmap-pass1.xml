@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Fictional demo output (TEST-NET address). -->
+<nmaprun scanner="nmap" args="nmap -Pn -sT --top-ports 1000 -T3 --open -oX - 192.0.2.10" version="7.94">
+  <host><status state="up"/><address addr="192.0.2.10" addrtype="ipv4"/>
+    <ports>
+      <port protocol="tcp" portid="21"><state state="open"/><service name="ftp"/></port>
+      <port protocol="tcp" portid="22"><state state="open"/><service name="ssh"/></port>
+      <port protocol="tcp" portid="80"><state state="open"/><service name="http"/></port>
+      <port protocol="tcp" portid="443"><state state="open"/><service name="https"/></port>
+      <port protocol="tcp" portid="3306"><state state="open"/><service name="mysql"/></port>
+      <port protocol="tcp" portid="8443"><state state="open"/><service name="https-alt"/></port>
+    </ports>
+  </host>
+</nmaprun>

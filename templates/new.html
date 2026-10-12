@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card narrow">
+  <h1>New assessment</h1>
+  <p>Enter a domain or a public IP address. Nothing is contacted until ownership is proven, except the ownership check itself.</p>
+  <form method="post">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>Client
+      <select name="client_id" required>
+        <option value="">Choose…</option>
+        {% for c in clients %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+      </select>
+    </label>
+    {% if not clients %}<p class="warn">No clients yet: an admin adds them under Team and clients.</p>{% endif %}
+    <label>Domain or IP <input name="target" required placeholder="example.com" autocomplete="off"></label>
+    <button>Create and show ownership instructions</button>
+  </form>
+</section>
+{% endblock %}

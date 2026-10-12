@@ -1,0 +1,5 @@
+{"title": "Demo extract of the CISA Known Exploited Vulnerabilities catalogue", "catalogVersion": "demo",
+ "vulnerabilities": [
+  {"cveID": "CVE-2021-40438", "vulnerabilityName": "Apache HTTP Server-Side Request Forgery (SSRF)", "dueDate": "2021-12-15"},
+  {"cveID": "CVE-2021-41773", "vulnerabilityName": "Apache HTTP Server Path Traversal", "dueDate": "2021-11-17"}
+ ]}

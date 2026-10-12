@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Fictional Greenbone/OpenVAS report for the demo client (TEST-NET address). -->
+<report id="demo-report" format_id="a994b278-1f62-11e1-96ac-406186ea4fc5" extension="xml" content_type="text/xml">
+  <report id="demo-report">
+    <results start="1" max="100">
+      <result id="r1">
+        <name>Apache HTTP Server mod_proxy SSRF Vulnerability</name>
+        <host>192.0.2.10<hostname>www.client-example.com</hostname></host>
+        <port>443/tcp</port>
+        <nvt oid="1.3.6.1.4.1.25623.1.0.146730"><type>nvt</type><name>Apache HTTP Server mod_proxy SSRF Vulnerability</name>
+          <refs><ref type="cve" id="CVE-2021-40438"/></refs></nvt>
+        <threat>High</threat><severity>9.0</severity><qod><value>80</value></qod>
+        <description>Installed version: 2.4.41. Fixed version: 2.4.49.</description>
+      </result>
+      <result id="r2">
+        <name>OpenSSH 6.8 &lt; 8.5 Double Free Vulnerability</name>
+        <host>192.0.2.10</host>
+        <port>22/tcp</port>
+        <nvt oid="1.3.6.1.4.1.25623.1.0.117235"><type>nvt</type><name>OpenSSH Double Free Vulnerability</name>
+          <refs><ref type="cve" id="CVE-2021-28041"/></refs></nvt>
+        <threat>High</threat><severity>7.1</severity><qod><value>80</value></qod>
+      </result>
+      <result id="r3">
+        <name>SSL/TLS: Report Vulnerable Cipher Suites for HTTPS (SWEET32)</name>
+        <host>192.0.2.10</host>
+        <port>8443/tcp</port>
+        <nvt oid="1.3.6.1.4.1.25623.1.0.108031"><type>nvt</type><name>SSL/TLS: Report Vulnerable Cipher Suites for HTTPS</name>
+          <refs><ref type="cve" id="CVE-2016-2183"/></refs></nvt>
+        <threat>Medium</threat><severity>5.0</severity><qod><value>98</value></qod>
+      </result>
+      <result id="r4">
+        <name>OS Detection Consolidation and Reporting</name>
+        <host>192.0.2.10</host>
+        <port>general/tcp</port>
+        <nvt oid="1.3.6.1.4.1.25623.1.0.105937"><type>nvt</type><name>OS Detection Consolidation and Reporting</name></nvt>
+        <threat>Log</threat><severity>0.0</severity><qod><value>80</value></qod>
+      </result>
+      <result id="r5">
+        <name>Possible Backup File Disclosure</name>
+        <host>192.0.2.10</host>
+        <port>443/tcp</port>
+        <nvt oid="1.3.6.1.4.1.25623.1.0.999999"><type>nvt</type><name>Possible Backup File Disclosure</name></nvt>
+        <threat>Medium</threat><severity>5.3</severity><qod><value>30</value></qod>
+      </result>
+    </results>
+  </report>
+</report>

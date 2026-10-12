@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% from "_macros.html" import chip, score_panel %}
+{% block title %}{{ a.target }} · CyberHealth Runner{% endblock %}
+{% block content %}
+{% set locked = a.signed_off_at is not none %}
+<div class="row-between">
+  <div>
+    <h1>{{ a.target }}</h1>
+    <p class="muted">#{{ a.id }} · {{ client.name }} · created {{ a.created_at[:16].replace('T', ' ') }} by {{ people[a.created_by].name }}
+      · <span class="state st-{{ a.status }}">{{ STATUS_TEXT.get(a.status, a.status) }}</span></p>
+  </div>
+  <div class="actions">
+    <a class="button secondary" href="{{ url_for('report', aid=a.id) }}">{{ 'Report' if locked else 'Draft report' }}</a>
+    {% if 'admin' in roles %}<a class="button secondary" href="{{ url_for('audit_view', assessment=a.id) }}">Audit trail</a>{% endif %}
+  </div>
+</div>
+
+<div class="grid2">
+  {{ score_panel(score) }}
+
+  <section class="card">
+    <h2>1. Ownership</h2>
+    {% if a.ownership_verified_at %}
+      <p class="ok">Proven {{ a.ownership_verified_at[:16].replace('T', ' ') }} by
+        {% if a.ownership_method == 'manual' %}manual record ({{ people[a.ownership_verified_by].name }}){% else %}{{ a.ownership_method|upper }} token{% endif %}.</p>
+      <p class="muted">{{ a.ownership_note }}</p>
+    {% else %}
+      <p>Ask the client to do <strong>one</strong> of these. The system checks every few minutes on its own.</p>
+      {% for s in steps %}
+        <p><strong>{{ s.method }}:</strong> {{ s.how }}<br><code class="copy">{{ s.value }}</code></p>
+      {% endfor %}
+      <p class="muted">Last check: {{ a.ownership_last_check[:16].replace('T', ' ') if a.ownership_last_check else 'never' }} — {{ a.ownership_last_result or '' }}</p>
+      {% if 'analyst' in roles %}
+      <form method="post" action="{{ url_for('ownership_check', aid=a.id) }}" class="inline">
+        <input type="hidden" name="csrf" value="{{ csrf }}"><button>Check now</button>
+      </form>
+      <details>
+        <summary>Record other proof instead (signed letter, registrar email)</summary>
+        <form method="post" enctype="multipart/form-data" action="{{ url_for('ownership_manual', aid=a.id) }}">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <label>What is the proof? Who confirmed, how and when? <textarea name="note" required rows="3"></textarea></label>
+          <label>Attach the document (optional) <input type="file" name="file"></label>
+          <button>Record proof and start checks</button>
+        </form>
+      </details>
+      {% endif %}
+    {% endif %}
+  </section>
+</div>
+
+<section class="card">
+  <h2>2. Modules</h2>
+  <table class="list">
+    <thead><tr><th>Module</th><th>Last run</th><th>Waiting for</th><th></th></tr></thead>
+    <tbody>
+    {% for key, s in states.items() %}
+      <tr>
+        <td>{{ s.label }}</td>
+        <td>{% if s.latest %}<span class="run r-{{ s.latest.status }}">{{ s.latest.status }}</span>
+            {{ (s.latest.finished_at or s.latest.queued_at)[:16].replace('T', ' ') }}
+            {% if s.latest.error %}<br><span class="muted">{{ s.latest.error }}</span>{% endif %}
+            {% if s.latest.evidence_path %}· <a href="{{ url_for('evidence', aid=a.id, run_id=s.latest.id) }}">evidence</a>{% endif %}
+          {% else %}–{% endif %}</td>
+        <td>{{ s.gate or '' }}</td>
+        <td>{% if 'analyst' in roles and not locked and not s.gate %}
+          <form method="post" action="{{ url_for('rerun', aid=a.id, module=key) }}" class="inline">
+            <input type="hidden" name="csrf" value="{{ csrf }}"><button class="small secondary">{{ 'Re-run' if s.latest else 'Run' }}</button>
+          </form>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% if 'analyst' in roles and not locked %}
+<div class="grid2">
+  <section class="card">
+    <h2>3. Services (Nmap) — provider heads-up</h2>
+    {% if a.headsup_at %}
+      <p class="ok">Confirmed {{ a.headsup_at[:16].replace('T', ' ') }} by {{ people[a.headsup_by].name }}: {{ a.headsup_note }}</p>
+      <p>Scope: {{ headsup_scope|join(', ') }}</p>
+    {% elif not a.ownership_verified_at %}
+      <p class="muted">Available once ownership is proven and Discovery has run.</p>
+    {% else %}
+      <p>Tell the hosting providers that the scan comes from <strong>{{ SCAN_IP or 'your scan IP (set RUNNER_SCAN_IP)' }}</strong>, then confirm here. Nmap scans only the addresses listed.</p>
+      <form method="post" action="{{ url_for('headsup', aid=a.id) }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <label>Addresses to scan (from Discovery; edit if needed)
+          <textarea name="scope" rows="2">{{ scan_scope|join(' ') }}</textarea></label>
+        <label>Who was told, how and when? <textarea name="note" required rows="2"></textarea></label>
+        <button>Confirm heads-up and start Nmap</button>
+      </form>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>4. Vulnerabilities — approval and report</h2>
+    {% if a.approval_at %}
+      <p class="ok">Written approval recorded {{ a.approval_at[:16].replace('T', ' ') }} by {{ people[a.approval_by].name }}: {{ a.approval_note }}</p>
+    {% else %}
+      <form method="post" enctype="multipart/form-data" action="{{ url_for('approval', aid=a.id) }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <label>Written provider approval (who, date, reference) <textarea name="note" required rows="2"></textarea></label>
+        <label>Attach the approval (optional) <input type="file" name="file"></label>
+        <button>Record approval</button>
+      </form>
+    {% endif %}
+    {% if a.report_file %}
+      <p class="ok">Report uploaded {{ a.report_at[:16].replace('T', ' ') }} (sha256 {{ a.report_sha256[:16] }}…).</p>
+    {% endif %}
+    <form method="post" enctype="multipart/form-data" action="{{ url_for('report_upload', aid=a.id) }}">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label>{{ 'Replace' if a.report_file else 'Upload' }} Greenbone/OpenVAS XML report <input type="file" name="report" accept=".xml" required></label>
+      <button class="secondary">Upload report</button>
+    </form>
+  </section>
+</div>
+{% endif %}
+
+<section class="card">
+  <div class="row-between">
+    <h2>5. Results</h2>
+    <p class="muted">{{ flagged|length }} flagged for a human decision</p>
+  </div>
+  {% for module, rows in by_module.items() %}
+    <h3>{{ MODULES[module] }}</h3>
+    <table class="results">
+      {% for r in rows %}
+      {% set c = BY_ID[r.control_id] %}
+      <tr id="{{ r.control_id }}" class="{{ 'flagged' if r.needs_review and not r.reviewed_at else '' }}">
+        <td class="cid">{{ r.control_id }}<br><span class="sev sev-{{ c.severity }}">{{ c.severity }}</span></td>
+        <td>
+          <strong>{{ c.title }}</strong> {{ chip(r.status) }}
+          {% if r.needs_review and not r.reviewed_at %}<span class="chip s-flag">Flagged</span>{% endif %}
+          <div>{{ r.summary }}</div>
+          {% if r.reviewed_at %}
+            <div class="review-note">Reviewed by {{ people[r.reviewed_by].name }}{% if r.original_status != r.status %} (was {{ STATUS_LABELS[r.original_status] }}){% endif %}{% if r.review_note %}: {{ r.review_note }}{% endif %}</div>
+          {% endif %}
+          {% if r.details_obj %}
+            <details><summary>Details</summary><pre>{{ r.details_obj|tojson(indent=2) }}</pre></details>
+          {% endif %}
+          {% if 'reviewer' in roles and not locked and r.status != 'not_tested' %}
+            <details {% if r.needs_review and not r.reviewed_at %}open{% endif %} class="review-form">
+              <summary>Review</summary>
+              <form method="post" action="{{ url_for('review', aid=a.id, control_id=r.control_id) }}">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <select name="status">
+                  {% for ch in choices %}<option value="{{ ch }}" {% if ch == r.status %}selected{% endif %}>{{ STATUS_LABELS[ch] }}</option>{% endfor %}
+                </select>
+                <input name="note" placeholder="Note (required if you change the result)">
+                <button class="small">Save</button>
+              </form>
+            </details>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  {% endfor %}
+</section>
+
+<section class="card">
+  <h2>6. Sign-off</h2>
+  {% if locked %}
+    <p class="ok">Signed off {{ a.signed_off_at[:16].replace('T', ' ') }} by {{ people[a.signed_off_by].name }}{% if a.self_signoff %} (self sign-off: only reviewer on the team; recorded in the audit trail){% endif %}.
+      {% if a.signoff_note %}Note: {{ a.signoff_note }}{% endif %}</p>
+  {% elif 'reviewer' in roles %}
+    {% if can_signoff %}
+      {% if self_signoff %}<p class="warn">You ran or approved part of this assessment. You are the only reviewer, so you may sign off; this is written to the audit trail.</p>{% endif %}
+      {% if score.provisional %}<p class="warn">Coverage is {{ score.coverage }}%: the score will be marked provisional.</p>{% endif %}
+      <form method="post" action="{{ url_for('signoff', aid=a.id) }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <label>Sign-off note (optional) <input name="note"></label>
+        <button>Sign off and notify the client</button>
+      </form>
+    {% else %}
+      <p class="muted">{{ why_not }}</p>
+    {% endif %}
+  {% else %}
+    <p class="muted">A reviewer signs off once every flagged result has a decision.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <details>
+    <summary>Run history</summary>
+    <table class="list">
+      <thead><tr><th>#</th><th>Module</th><th>Status</th><th>By</th><th>Queued</th><th>Finished</th><th>Evidence sha256</th></tr></thead>
+      {% for r in runs %}
+      <tr><td>{{ r.id }}</td><td>{{ MODULES[r.module] }}</td><td>{{ r.status }}</td>
+        <td>{{ people[r.triggered_by].name if r.triggered_by else 'system' }}</td>
+        <td>{{ r.queued_at[:16].replace('T', ' ') }}</td><td>{{ (r.finished_at or '')[:16].replace('T', ' ') }}</td>
+        <td>{% if r.evidence_path %}<a href="{{ url_for('evidence', aid=a.id, run_id=r.id) }}"><code>{{ r.evidence_sha256[:16] }}…</code></a>{% endif %}</td></tr>
+      {% endfor %}
+    </table>
+  </details>
+</section>
+{% endblock %}

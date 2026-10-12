@@ -1,0 +1,11 @@
+# Caddy gets and renews the HTTPS certificate for RUNNER_HOST automatically.
+{
+	email {$ACME_EMAIL}
+}
+
+{$RUNNER_HOST} {
+	request_body {
+		max_size 60MB
+	}
+	reverse_proxy runner:8000
+}

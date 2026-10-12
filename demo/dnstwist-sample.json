@@ -1,0 +1,7 @@
+[
+  {"fuzzer": "*original", "domain": "client-example.com", "dns_a": ["192.0.2.10"], "dns_mx": ["mail.client-example.com"], "dns_ns": ["ns1.dns-host.example"]},
+  {"fuzzer": "homoglyph", "domain": "client-exampie.com", "dns_a": ["203.0.113.66"], "dns_mx": ["mx.client-exampie.com"], "dns_ns": ["ns1.parking.example"]},
+  {"fuzzer": "transposition", "domain": "cliente-xample.com", "dns_a": ["203.0.113.67"], "dns_ns": ["ns1.parking.example"]},
+  {"fuzzer": "tld-swap", "domain": "client-example.net", "dns_ns": ["ns1.parking.example"]},
+  {"fuzzer": "omission", "domain": "clientexample.com", "dns_ns": ["ns1.parking.example"]}
+]

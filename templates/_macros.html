@@ -1,0 +1,27 @@
+{% macro chip(status) -%}
+<span class="chip s-{{ status }}">{{ STATUS_LABELS.get(status, status) }}</span>
+{%- endmacro %}
+{% macro grade(score) -%}
+{% if score and score.score is not none %}
+<div class="grade g-{{ score.grade }}">
+  <div class="num">{{ score.score }}</div>
+  <div class="letter">{{ score.grade }} · {{ score.label }}</div>
+</div>
+{% else %}
+<div class="grade g-none"><div class="num">–</div><div class="letter">Not scored yet</div></div>
+{% endif %}
+{%- endmacro %}
+{% macro score_panel(score) -%}
+<div class="score-panel">
+  {{ grade(score) }}
+  <div class="score-detail">
+    <p>Coverage: {{ score.coverage }}% of weighted controls scored{% if score.provisional %} — <strong>provisional</strong>{% endif %}.</p>
+    {% for cap in score.caps %}<p class="warn">{{ cap }}</p>{% endfor %}
+    <table class="mini">
+      {% for key in MODULES %}{% set m = score.modules[key] %}
+      <tr><td>{{ m.label }}</td><td class="r">{{ m.score if m.score is not none else '–' }}</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+{%- endmacro %}

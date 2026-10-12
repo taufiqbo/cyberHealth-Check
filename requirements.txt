@@ -1,0 +1,7 @@
+flask>=3.0,<4
+dnspython>=2.6,<3
+requests>=2.31,<3
+defusedxml>=0.7,<1
+cryptography>=42
+gunicorn>=22
+pytest>=8

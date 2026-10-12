@@ -1,0 +1,28 @@
+services:
+  runner:
+    build: .
+    env_file: .env
+    environment:
+      RUNNER_DATA_DIR: /data
+    volumes:
+      - runner-data:/data
+    restart: unless-stopped
+    expose:
+      - "8000"
+
+  caddy:
+    image: caddy:2
+    env_file: .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on:
+      - runner
+    restart: unless-stopped
+
+volumes:
+  runner-data:
+  caddy-data:

@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card narrow">
+  <h1>{{ a.target }}</h1>
+  <p>Status: <strong>{{ STATUS_TEXT.get(a.status, a.status) }}</strong>.</p>
+  <p>Results appear here after a reviewer has checked and signed off the assessment. You will get an email when it is ready.</p>
+</section>
+{% endblock %}

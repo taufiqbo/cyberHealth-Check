@@ -1,0 +1,432 @@
+"""Tests for CyberHealth Runner. Run: python3 -m pytest -q test_app.py"""
+import json
+import re
+from pathlib import Path
+
+import pytest
+
+from app import create_app
+from runner import accounts, audit, eol, ownership, scoring
+from runner.checks import Context
+from runner.checks import email as email_check
+from runner.checks import tls as tls_check
+from runner.checks.services import parse_nmap
+from runner.checks.vulns import parse_greenbone
+from runner.config import load_config
+from runner.controls import CONTROLS
+from runner.demo_net import DEMO_DIR, DOMAIN, DemoNet
+from runner.pipeline import GateClosed
+
+ADMIN = ("boss@runner.example", "a-long-password")
+
+
+# Helpers ---------------------------------------------------------------------
+def make_app(tmp_path, demo=False):
+    cfg = load_config(demo=demo, data_dir=Path(tmp_path), admin_email=ADMIN[0], admin_password=ADMIN[1],
+                      secure_cookies=False, inline_worker=False)
+    if demo:
+        return create_app(cfg, start_worker=False)
+    holder = {}
+    net = DemoNet(token_lookup=lambda d: [r["ownership_token"] for r in holder["db"].all(
+        "SELECT ownership_token FROM assessments WHERE target = ?", (d,))])
+    app = create_app(cfg, net=net, start_worker=False)
+    holder["db"] = app.extensions["runner"].db
+    return app
+
+
+def csrf_of(client):
+    page = client.get("/login").get_data(as_text=True)
+    return re.search(r'name="csrf" value="([^"]+)"', page).group(1)
+
+
+def login(client, email, password):
+    token = csrf_of(client)
+    return client.post("/login", data={"email": email, "password": password, "csrf": token})
+
+
+def post(client, url, **data):
+    data["csrf"] = csrf_of(client)
+    return client.post(url, data=data)
+
+
+@pytest.fixture
+def demo(tmp_path):
+    return make_app(tmp_path, demo=True)
+
+
+@pytest.fixture
+def live(tmp_path):
+    """Non-demo app (bootstrap admin, no seed) answered by the demo fixtures."""
+    return make_app(tmp_path)
+
+
+def add_people(service, *specs):
+    admin = service.db.one("SELECT * FROM users WHERE email = ?", (ADMIN[0],))
+    cid = service.db.run("INSERT INTO clients (name, contact_email, created_at) VALUES ('Acme', 'it@acme.example', 'x')")
+    ids = {}
+    for email, roles in specs:
+        ids[email] = accounts.create_user(service.db, email, email, "a-long-password", roles,
+                                          client_id=cid if "client" in roles else None, actor=admin)
+    return cid, ids
+
+
+# Scoring ---------------------------------------------------------------------
+def test_score_all_pass_is_100_A():
+    s = scoring.compute([{"control_id": c.id, "status": "pass"} for c in CONTROLS])
+    assert (s["score"], s["grade"], s["coverage"], s["provisional"]) == (100, "A", 100, False)
+
+
+def test_score_caps_for_kev_and_critical():
+    rows = [{"control_id": c.id, "status": "pass"} for c in CONTROLS]
+    by = {r["control_id"]: r for r in rows}
+    by["SVC-02"]["status"] = "fail"
+    s = scoring.compute(rows)
+    assert s["score"] <= scoring.CAP_CRITICAL and s["raw_score"] > s["score"]
+    by["VUL-03"]["status"] = "fail"
+    assert scoring.compute(rows)["score"] <= scoring.CAP_KEV
+
+
+def test_score_excludes_untested_and_na():
+    rows = [{"control_id": "TLS-01", "status": "pass"}, {"control_id": "TLS-02", "status": "na"}]
+    s = scoring.compute(rows)
+    assert s["score"] == 100 and s["provisional"] and s["coverage"] < 10
+    assert scoring.compute([])["score"] is None
+
+
+def test_partial_is_half():
+    rows = [{"control_id": c.id, "status": "partial" if c.module == "email" else "na"} for c in CONTROLS]
+    assert scoring.compute(rows)["score"] == 50
+
+
+# Targets and ownership -------------------------------------------------------
+@pytest.mark.parametrize("raw,expected", [
+    ("https://www.Example.com/path", ("example.com", "domain")),
+    ("shop.example.co.uk", ("shop.example.co.uk", "domain")),
+    ("8.8.8.8", ("8.8.8.8", "ip")),
+])
+def test_normalise_target_ok(raw, expected):
+    assert ownership.normalise_target(raw) == expected
+
+
+@pytest.mark.parametrize("raw", ["", "10.0.0.1", "127.0.0.1", "localhost", "-oX.com", "exa mple.com", "a_b.com"])
+def test_normalise_target_rejects(raw):
+    with pytest.raises(ValueError):
+        ownership.normalise_target(raw)
+
+
+def test_ownership_needs_the_exact_token():
+    a = {"target": DOMAIN, "target_type": "domain", "ownership_token": "chk-right"}
+    net = DemoNet(token_lookup=lambda d: ["chk-wrong"])
+    assert ownership.check(net, a)[0] is False
+    net = DemoNet(token_lookup=lambda d: ["chk-right"])
+    assert ownership.check(net, a)[:2] == (True, "dns")
+
+
+def test_nothing_runs_before_ownership(live):
+    service = live.extensions["runner"]
+    cid, ids = add_people(service, ("an@x.example", ["analyst"]))
+    analyst = service.user(ids["an@x.example"])
+    aid = service.create_assessment(analyst, cid, "unknown-domain.example")
+    assert service.check_ownership(aid)[0] is False
+    for module in ("discovery", "tls", "email", "web", "brand", "services", "vulns"):
+        with pytest.raises(GateClosed):
+            service.enqueue(aid, module, analyst)
+    assert service.db.all("SELECT * FROM module_runs") == []
+
+
+def test_manual_ownership_needs_a_note(live):
+    service = live.extensions["runner"]
+    cid, ids = add_people(service, ("an@x.example", ["analyst"]))
+    analyst = service.user(ids["an@x.example"])
+    aid = service.create_assessment(analyst, cid, "unknown-domain.example")
+    with pytest.raises(ValueError):
+        service.record_manual_ownership(aid, analyst, "   ")
+    service.record_manual_ownership(aid, analyst, "Signed letter from IT manager, 1 Oct")
+    queued = {r["module"] for r in service.db.all("SELECT module FROM module_runs")}
+    assert queued == {"discovery", "tls", "email", "web", "brand", "lifecycle"}
+
+
+def test_unresolvable_domain_is_inconclusive_not_failed(live):
+    service = live.extensions["runner"]
+    cid, ids = add_people(service, ("an@x.example", ["analyst"]))
+    analyst = service.user(ids["an@x.example"])
+    aid = service.create_assessment(analyst, cid, "unknown-domain.example")
+    service.record_manual_ownership(aid, analyst, "Signed letter")
+    service.work_until_idle()
+    statuses = {r["control_id"]: r["status"] for r in service.results(aid)}
+    assert statuses["EML-01"] == statuses["EAS-04"] == statuses["TLS-01"] == "inconclusive"
+    assert "fail" not in statuses.values()
+
+
+# Gates ------------------------------------------------------------------------
+def test_services_and_vulns_wait_for_their_approvals(live):
+    service = live.extensions["runner"]
+    cid, ids = add_people(service, ("an@x.example", ["analyst"]))
+    analyst = service.user(ids["an@x.example"])
+    aid = service.create_assessment(analyst, cid, DOMAIN)
+    assert service.check_ownership(aid)[0] is True
+    service.work_until_idle()
+    with pytest.raises(GateClosed, match="heads-up"):
+        service.enqueue(aid, "services", analyst)
+    with pytest.raises(GateClosed, match="approval"):
+        service.enqueue(aid, "vulns", analyst)
+    service.record_approval(aid, analyst, "Provider approval ref 42")
+    with pytest.raises(GateClosed, match="report"):
+        service.enqueue(aid, "vulns", analyst)
+    with pytest.raises(ValueError):
+        service.confirm_headsup(aid, analyst, "", ["192.0.2.10"])
+    service.confirm_headsup(aid, analyst, "Told the host by email", ["192.0.2.10"])
+    service.work_until_idle()
+    results = {r["control_id"]: r for r in service.results(aid)}
+    assert results["SVC-02"]["status"] == "fail"           # MySQL 3306
+    assert results["SVC-03"]["needs_review"] == 1         # port 21 open in pass one only
+    assert results["SVC-05"]["status"] == "pass"           # FTP was not confirmed
+    assert results["LCY-02"]["status"] == "fail"           # MySQL 5.7 is end-of-life
+    assert results["VUL-01"]["status"] == "not_tested"
+
+
+# Review, sign-off, separation of duties ------------------------------------
+def _ready(service, analyst_email="an@x.example"):
+    a = service.db.one("SELECT * FROM users WHERE email = ?", (analyst_email,))
+    cid = service.db.one("SELECT id FROM clients")["id"]
+    aid = service.create_assessment(a, cid, DOMAIN)
+    service.check_ownership(aid, a)
+    service.work_until_idle()
+    return aid
+
+
+def _clear_flags(service, aid, reviewer):
+    for row in service.results(aid):
+        if row["needs_review"] and not row["reviewed_at"]:
+            status = "pass" if row["status"] in ("review", "inconclusive") else row["status"]
+            service.review_result(aid, row["control_id"], reviewer, status, "checked by hand")
+
+
+def test_change_needs_a_note_and_signoff_waits_for_flags(live):
+    service = live.extensions["runner"]
+    add_people(service, ("an@x.example", ["analyst"]), ("rv@x.example", ["reviewer"]))
+    aid = _ready(service)
+    reviewer = service.db.one("SELECT * FROM users WHERE email = 'rv@x.example'")
+    with pytest.raises(ValueError, match="note"):
+        service.review_result(aid, "WEB-01", reviewer, "pass", "")
+    with pytest.raises(ValueError, match="flagged"):
+        service.sign_off(aid, reviewer, "")
+    _clear_flags(service, aid, reviewer)
+    service.sign_off(aid, reviewer, "")
+    a = service.assessment(aid)
+    assert a["status"] == "signed_off" and a["self_signoff"] == 0
+    with pytest.raises(ValueError, match="locked"):
+        service.review_result(aid, "WEB-01", reviewer, "pass", "late change")
+    with pytest.raises(GateClosed):
+        service.enqueue(aid, "web", reviewer)
+    kinds = {n["kind"] for n in service.db.all("SELECT kind FROM notifications")}
+    assert {"ownership_verified", "ready_for_review", "signed_off"} <= kinds
+
+
+def test_reviewer_who_ran_it_cannot_sign_off_when_another_reviewer_exists(live):
+    service = live.extensions["runner"]
+    add_people(service, ("both@x.example", ["analyst", "reviewer"]), ("rv@x.example", ["reviewer"]))
+    aid = _ready(service, "both@x.example")
+    both = service.db.one("SELECT * FROM users WHERE email = 'both@x.example'")
+    _clear_flags(service, aid, both)
+    with pytest.raises(ValueError, match="Another reviewer"):
+        service.sign_off(aid, both, "")
+    other = service.db.one("SELECT * FROM users WHERE email = 'rv@x.example'")
+    service.sign_off(aid, other, "")
+    assert service.assessment(aid)["signed_off_by"] == other["id"]
+
+
+def test_sole_reviewer_may_self_sign_off_and_it_is_audited(live):
+    service = live.extensions["runner"]
+    add_people(service)
+    # The bootstrap admin holds all three staff roles and is the only reviewer.
+    boss = service.db.one("SELECT * FROM users WHERE email = ?", (ADMIN[0],))
+    assert set(boss["roles"].split(",")) == {"admin", "analyst", "reviewer"}
+    aid = _ready(service, ADMIN[0])
+    _clear_flags(service, aid, boss)
+    service.sign_off(aid, boss, "")
+    assert service.assessment(aid)["self_signoff"] == 1
+    row = service.db.one("SELECT * FROM audit WHERE action = 'assessment.signed_off'")
+    assert json.loads(row["detail"])["self_signoff"] is True
+
+
+# Web: roles, CSRF, client visibility -----------------------------------------
+def test_demo_logins_and_pages_render(demo):
+    for email, password in [("admin@demo.example", "demo-admin"), ("analyst@demo.example", "demo-analyst"),
+                            ("reviewer@demo.example", "demo-reviewer")]:
+        c = demo.test_client()
+        assert login(c, email, password).status_code == 302
+        for url in ("/", "/assessments/1", "/assessments/2", "/assessments/1/report", "/assessments/2/report",
+                    "/assessments/1/report.json", "/account"):
+            assert c.get(url).status_code == 200, (email, url)
+    c = demo.test_client()
+    login(c, "admin@demo.example", "demo-admin")
+    for url in ("/admin/people", "/admin/audit", "/admin/notifications", "/admin/audit?assessment=1"):
+        assert c.get(url).status_code == 200
+    assert "Hash chain intact" in c.get("/admin/audit").get_data(as_text=True)
+
+
+def test_admin_cannot_run_or_sign_off(demo):
+    c = demo.test_client()
+    login(c, "admin@demo.example", "demo-admin")
+    assert c.get("/assessments/new").status_code == 403
+    assert post(c, "/assessments/2/signoff").status_code == 403
+    assert post(c, "/assessments/2/rerun/web").status_code == 403
+    assert post(c, "/assessments/2/review/WEB-02", status="pass", note="x").status_code == 403
+
+
+def test_client_sees_results_only_after_signoff(demo):
+    c = demo.test_client()
+    login(c, f"client@{DOMAIN}", "demo-client")
+    signed = c.get("/assessments/1/report").get_data(as_text=True)
+    assert "External CyberHealth Check" in signed and "DRAFT" not in signed
+    pending = c.get("/assessments/2/report").get_data(as_text=True)
+    assert "after a reviewer" in pending and "SVC-01" not in pending
+    assert c.get("/assessments/2/report.json").status_code == 404
+    assert c.get("/assessments/1/evidence/1").status_code == 403
+    assert c.get("/admin/audit").status_code == 403
+    assert c.get("/assessments/2").status_code == 302  # clients go to the report view
+
+
+def test_client_cannot_see_other_clients(demo):
+    service = demo.extensions["runner"]
+    other = service.db.run("INSERT INTO clients (name, created_at) VALUES ('Other', 'x')")
+    accounts.create_user(service.db, "o@other.example", "O", "a-long-password", ["client"], client_id=other)
+    c = demo.test_client()
+    login(c, "o@other.example", "a-long-password")
+    assert c.get("/assessments/1/report").status_code == 404
+    assert "client-example.com" not in c.get("/").get_data(as_text=True)
+
+
+def test_post_without_csrf_is_refused(demo):
+    c = demo.test_client()
+    login(c, "analyst@demo.example", "demo-analyst")
+    assert c.post("/assessments/2/rerun/web").status_code == 400
+
+
+def test_full_web_flow_review_and_signoff(demo):
+    c = demo.test_client()
+    login(c, "reviewer@demo.example", "demo-reviewer")
+    page = c.get("/assessments/2").get_data(as_text=True)
+    assert "flagged for a human decision" in page
+    resp = post(c, "/assessments/2/review/WEB-02", status="pass", note="")
+    assert "note is required" in c.get("/assessments/2").get_data(as_text=True)
+    service = demo.extensions["runner"]
+    for row in service.results(2):
+        if row["needs_review"] and not row["reviewed_at"]:
+            status = "pass" if row["status"] in ("review", "inconclusive") else row["status"]
+            resp = post(c, f"/assessments/2/review/{row['control_id']}", status=status, note="looked at it")
+            assert resp.status_code == 302
+    post(c, "/assessments/2/signoff", note="ok")
+    assert service.assessment(2)["status"] == "signed_off"
+    client = demo.test_client()
+    login(client, f"client@{DOMAIN}", "demo-client")
+    assert "DRAFT" not in client.get("/assessments/2/report").get_data(as_text=True)
+
+
+def test_analyst_creates_assessment_via_web(demo):
+    c = demo.test_client()
+    login(c, "analyst@demo.example", "demo-analyst")
+    resp = post(c, "/assessments/new", client_id="1", target="new-client.example")
+    assert resp.status_code == 302
+    page = c.get(resp.headers["Location"]).get_data(as_text=True)
+    assert "_cyberhealth.new-client.example" in page and "cyberhealth-verify=chk-" in page
+
+
+def test_greenbone_upload_rejects_non_xml(demo):
+    import io
+    c = demo.test_client()
+    login(c, "analyst@demo.example", "demo-analyst")
+    data = {"csrf": csrf_of(c), "report": (io.BytesIO(b"not xml"), "report.xml")}
+    c.post("/assessments/2/report-upload", data=data, content_type="multipart/form-data")
+    assert demo.extensions["runner"].assessment(2)["report_file"] is None
+
+
+def test_login_lockout(live):
+    c = live.test_client()
+    for _ in range(accounts.MAX_FAILURES):
+        login(c, ADMIN[0], "wrong")
+    resp = login(c, ADMIN[0], ADMIN[1])
+    assert resp.status_code == 200 and "Too many" in resp.get_data(as_text=True)
+
+
+# Audit and evidence ------------------------------------------------------------
+def test_audit_chain_detects_tampering(demo):
+    db = demo.extensions["runner"].db
+    assert audit.verify_chain(db) == (True, None)
+    db.run("UPDATE audit SET actor = 'someone-else' WHERE id = 3")
+    assert audit.verify_chain(db) == (False, 3)
+
+
+def test_evidence_files_match_their_hashes(demo):
+    import hashlib
+    for run in demo.extensions["runner"].db.all("SELECT * FROM module_runs WHERE status = 'done'"):
+        assert hashlib.sha256(Path(run["evidence_path"]).read_bytes()).hexdigest() == run["evidence_sha256"]
+
+
+def test_demo_signed_off_assessment_is_scored(demo):
+    a = demo.extensions["runner"].assessment(1)
+    score = json.loads(a["score_json"])
+    assert a["status"] == "signed_off" and score["grade"] == "F" and score["coverage"] == 100
+    assert any("Known exploited" in cap for cap in score["caps"])
+
+
+# Parsers and individual checks ----------------------------------------------
+def test_greenbone_parser_skips_log_and_low_quality():
+    findings = parse_greenbone((DEMO_DIR / "greenbone-sample.xml").read_text())
+    names = [f["name"] for f in findings]
+    assert len(findings) == 3
+    assert not any("OS Detection" in n or "Backup File" in n for n in names)
+    assert findings[0]["cves"] == ["CVE-2021-40438"] and findings[0]["severity"] == 9.0
+
+
+def test_greenbone_parser_refuses_entities():
+    evil = '<?xml version="1.0"?><!DOCTYPE r [<!ENTITY x SYSTEM "file:///etc/passwd">]><report>&x;</report>'
+    with pytest.raises(Exception):
+        parse_greenbone(evil)
+
+
+def test_nmap_parser():
+    hosts = parse_nmap((DEMO_DIR / "nmap-pass2.xml").read_text())
+    assert hosts["192.0.2.10"][3306]["product"] == "MySQL"
+    assert hosts["192.0.2.10"][21]["state"] == "filtered"
+
+
+class _Cfg:
+    max_web_hosts = 10
+    cache_dir = "/nonexistent"
+
+
+def _ctx(net, target=DOMAIN):
+    return Context(assessment={"target": target, "target_type": "domain"}, net=net, config=_Cfg())
+
+
+def test_tls_weak_ciphers_inconclusive_when_openssl_cannot_test():
+    results = {r["control_id"]: r for r in tls_check.run(_ctx(DemoNet()))}
+    assert results["TLS-06"]["status"] == "inconclusive" and results["TLS-06"]["review"]
+    assert "nmap" in results["TLS-06"]["summary"]
+
+
+def test_spf_lookup_limit():
+    class Net(DemoNet):
+        def resolve(self, name, rtype):
+            if rtype == "TXT" and name == DOMAIN:
+                return ["v=spf1 " + " ".join(f"include:s{i}.mail.example" for i in range(11)) + " -all"]
+            if rtype == "TXT" and name.endswith(".mail.example"):
+                return ["v=spf1 ip4:198.51.100.1 -all"]
+            if rtype == "MX":
+                return ["mx.mail.example"]
+            return []
+    results = {r["control_id"]: r for r in email_check.run(_ctx(Net()))}
+    assert results["EML-02"]["status"] == "fail" and "11" in results["EML-02"]["summary"]
+    assert results["EML-03"]["status"] == "fail"
+
+
+def test_eol_judgement():
+    data, _ = eol.load()
+    from datetime import date
+    assert eol.judge("php", "7.4.3", data, today=date(2026, 1, 1))["status"] == "eol"
+    assert eol.judge("php", "8.4.1", data, today=date(2026, 1, 1))["status"] == "supported"
+    assert eol.judge("postgresql", "14.9", data, today=date(2026, 8, 1))["status"] == "soon"
+    assert eol.judge("nginx", "9.9", data)["status"] == "unknown"
+    assert eol.find_cycle(["1.1", "1.1.1"], "1.1.1") == "1.1.1"

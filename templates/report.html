@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% from "_macros.html" import chip, score_panel %}
+{% block title %}CyberHealth report · {{ a.target }}{% endblock %}
+{% block content %}
+{% if not a.signed_off_at %}<div class="draft">DRAFT — not reviewed or signed off. Not for the client.</div>{% endif %}
+<section class="card report-head">
+  <h1>External CyberHealth Check: {{ a.target }}</h1>
+  <p>{{ client.name }}{% if a.signed_off_at %} · signed off {{ a.signed_off_at[:10] }} by {{ signer.name }}{% endif %} · CyberHealth Score v{{ score.version }}</p>
+  <p class="muted">An outside-in check of what the internet can see. It is not a penetration test: nothing was exploited and no login was attempted.</p>
+  <p><a href="{{ url_for('report_json', aid=a.id) }}">Download as JSON</a></p>
+</section>
+{{ score_panel(score) }}
+
+<section class="card">
+  <h2>What to fix first</h2>
+  {% set ns = namespace(any=false) %}
+  <ol>
+  {% for sev in ['critical', 'high', 'medium', 'low'] %}
+    {% for module, rows in by_module.items() %}{% for r in rows %}
+      {% set c = BY_ID[r.control_id] %}
+      {% if c.severity == sev and r.status in ['fail', 'partial'] %}
+        {% set ns.any = true %}
+        <li><strong>{{ c.title }}</strong> <span class="sev sev-{{ sev }}">{{ sev }}</span> {{ chip(r.status) }}<br>
+          {{ r.summary }}<br><em>Fix:</em> {{ c.fix }}</li>
+      {% endif %}
+    {% endfor %}{% endfor %}
+  {% endfor %}
+  </ol>
+  {% if not ns.any %}<p>Nothing failed. Keep it that way with a check every quarter.</p>{% endif %}
+</section>
+
+{% for module, rows in by_module.items() %}
+<section class="card">
+  <h2>{{ MODULES[module] }}{% if score.modules[module].score is not none %} — {{ score.modules[module].score }}{% endif %}</h2>
+  <table class="results">
+  {% for r in rows %}
+    {% set c = BY_ID[r.control_id] %}
+    <tr>
+      <td class="cid">{{ r.control_id }}</td>
+      <td><strong>{{ c.title }}</strong> {{ chip(r.status) }}
+        <div>{{ r.summary }}</div>
+        {% if r.review_note %}<div class="review-note">Reviewer: {{ r.review_note }}</div>{% endif %}
+        <div class="muted">Why it matters: {{ c.why }}</div>
+      </td>
+    </tr>
+  {% endfor %}
+  </table>
+</section>
+{% endfor %}
+
+<section class="card">
+  <h2>How this was scored</h2>
+  <p>Each control is weighted by severity (critical 10, high 6, medium 3, low 1). Pass earns full points, Partial half, Fail none.
+    Controls that were not tested or do not apply are left out, and coverage shows how much was scored.
+    Module scores are combined with fixed module weights. A known exploited vulnerability caps the score at 49;
+    any failed critical control caps it at 69. Grades: A 90+, B 80+, C 70+, D 60+, F below 60.</p>
+  <p class="muted">Known limits: screenshots are reviewed by a person; weak TLS settings are tested with this server's OpenSSL
+    and confirmed by hand when it cannot test them; vulnerability results come from an imported Greenbone/OpenVAS report.</p>
+</section>
+{% endblock %}
