@@ -491,3 +491,43 @@ def test_dnstwist_found_through_python_when_not_on_path(monkeypatch, tmp_path):
     monkeypatch.setattr(importlib.util, "find_spec", lambda name: object() if name == "dnstwist" else None)
     assert net.tool_argv("dnstwist") == [sys.executable, "-m", "dnstwist"]
     assert net.tool_argv("nmap") is None
+
+
+def test_known_hosts_parsing():
+    assert ownership.parse_known_hosts("WWW.Example.com, mail.example.com\n*.shop.example.com", "example.com") == \
+        ["*.shop.example.com", "mail.example.com", "www.example.com"]
+    with pytest.raises(ValueError, match="other.com"):
+        ownership.parse_known_hosts("www.example.com other.com", "example.com")
+    assert ownership.host_is_known("a.shop.example.com", ["*.shop.example.com"])
+    assert not ownership.host_is_known("shop.example.com.evil.com", ["*.shop.example.com"])
+
+
+@pytest.mark.parametrize("known,status,flagged", [
+    ("", "review", True),
+    (f"{DOMAIN} www.{DOMAIN} mail.{DOMAIN}", "partial", True),     # dev and vpn are not on the list
+    (f"{DOMAIN} *.{DOMAIN}", "pass", False),
+])
+def test_eas01_compares_with_client_list(live, known, status, flagged):
+    service = live.extensions["runner"]
+    cid, ids = add_people(service, ("an@x.example", ["analyst"]))
+    analyst = service.user(ids["an@x.example"])
+    aid = service.create_assessment(analyst, cid, DOMAIN, known)
+    service.check_ownership(aid)
+    service.work_until_idle()
+    row = {r["control_id"]: r for r in service.results(aid)}["EAS-01"]
+    assert (row["status"], bool(row["needs_review"])) == (status, flagged)
+    if status == "partial":
+        assert "dev.client-example.com" in row["summary"] and "vpn.client-example.com" in row["summary"]
+
+
+def test_saving_known_hosts_reruns_discovery(demo):
+    c = demo.test_client()
+    login(c, "analyst@demo.example", "demo-analyst")
+    post(c, "/assessments/2/known-hosts", known_hosts=f"{DOMAIN}\n*.{DOMAIN}")
+    service = demo.extensions["runner"]
+    assert service.runs(2)[0]["module"] == "discovery" and service.runs(2)[0]["status"] == "queued"
+    service.work_until_idle()
+    row = {r["control_id"]: r for r in service.results(2)}["EAS-01"]
+    assert row["status"] == "pass"
+    post(c, "/assessments/2/known-hosts", known_hosts="evil.example")
+    assert "Not part of" in c.get("/assessments/2").get_data(as_text=True)

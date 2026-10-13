@@ -58,7 +58,8 @@ CREATE TABLE IF NOT EXISTS assessments (
     signed_off_by INTEGER,
     signoff_note TEXT,
     self_signoff INTEGER NOT NULL DEFAULT 0,
-    score_json TEXT
+    score_json TEXT,
+    known_hosts TEXT
 );
 CREATE TABLE IF NOT EXISTS module_runs (
     id INTEGER PRIMARY KEY,
@@ -137,9 +138,10 @@ class Database:
         with self.connect() as conn:
             conn.executescript(SCHEMA)
             # Databases made by older versions lack newer columns.
-            columns = {r["name"] for r in conn.execute("PRAGMA table_info(module_runs)")}
-            if "progress" not in columns:
-                conn.execute("ALTER TABLE module_runs ADD COLUMN progress TEXT")
+            for table, column in (("module_runs", "progress"), ("assessments", "known_hosts")):
+                columns = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+                if column not in columns:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
 
     @contextmanager
     def connect(self):

@@ -49,7 +49,8 @@ def create_app(config=None, net=None, start_worker=None):
     app.extensions["runner"] = service
     app.jinja_env.globals.update(STATUS_LABELS=STATUS_LABELS, STATUS_TEXT=STATUS_TEXT, MODULES=MODULES,
                                  BY_ID=BY_ID, DEMO=config.demo, SCORE_VERSION=scoring.VERSION,
-                                 SCAN_IP=config.scan_ip)
+                                 SCAN_IP=config.scan_ip, BRAND=config.brand_name,
+                                 BRAND_TAGLINE=config.brand_tagline, BRAND_CONTACT=config.brand_contact)
 
     if start_worker is None:
         start_worker = config.inline_worker
@@ -216,7 +217,8 @@ def register(app, service):
                 client_id = int(request.form.get("client_id") or 0)
                 if not db.one("SELECT id FROM clients WHERE id = ?", (client_id,)):
                     raise ValueError("Choose a client.")
-                aid = service.create_assessment(g.user, client_id, request.form.get("target"))
+                aid = service.create_assessment(g.user, client_id, request.form.get("target"),
+                                                request.form.get("known_hosts", ""))
                 service.check_ownership(aid, g.user)
                 return redirect(url_for("assessment", aid=aid))
             except ValueError as exc:
@@ -242,6 +244,8 @@ def register(app, service):
             score=loads(a["score_json"]) if a["signed_off_at"] else service.score(aid),
             steps=ownership.instructions(a), scan_scope=disc.get("scan_scope", []),
             headsup_scope=loads(a["headsup_scope"], []), runs=service.runs(aid)[:30],
+            known_hosts=loads(a["known_hosts"], []),
+            live_hosts=[h["name"] for h in disc.get("hosts", []) if h.get("resolves")],
             can_signoff=allowed, self_signoff=self_signoff, why_not=why_not, people=people,
             flagged=[r for r in results if r["needs_review"] and not r["reviewed_at"]],
             choices=REVIEWER_CHOICES)
@@ -265,6 +269,17 @@ def register(app, service):
             service.record_manual_ownership(aid, g.user, request.form.get("note", ""), path)
             flash("Ownership proof recorded. The automatic checks have started.", "ok")
         except ValueError as exc:
+            flash(str(exc), "error")
+        return redirect(url_for("assessment", aid=aid))
+
+    @app.route("/assessments/<int:aid>/known-hosts", methods=["POST"])
+    @role_required("analyst")
+    def known_hosts(aid):
+        load_assessment(aid)
+        try:
+            known = service.set_known_hosts(aid, g.user, request.form.get("known_hosts", ""))
+            flash(f"Client asset list saved ({len(known)} name(s)). Discovery will compare against it.", "ok")
+        except (ValueError, GateClosed) as exc:
             flash(str(exc), "error")
         return redirect(url_for("assessment", aid=aid))
 

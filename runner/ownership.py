@@ -76,3 +76,31 @@ def check(net, assessment):
     if errors:
         message += " (" + "; ".join(errors[:2]) + ")"
     return False, None, message
+
+
+def parse_known_hosts(text, domain):
+    """The client's asset list: one name per line (commas or spaces also fine). '*.sub.example.com' covers every
+    name under it. Returns a sorted list or raises ValueError naming entries outside the assessed domain."""
+    names, bad = set(), []
+    for raw in re.split(r"[\s,;]+", (text or "").strip().lower()):
+        name = re.sub(r"^[a-z]+://", "", raw).split("/")[0].rstrip(".")
+        if not name:
+            continue
+        bare = name[2:] if name.startswith("*.") else name
+        if (bare == domain or bare.endswith("." + domain)) and (bare == domain or DOMAIN_RE.match(bare)):
+            names.add(name)
+        else:
+            bad.append(raw)
+    if bad:
+        raise ValueError(f"Not part of {domain}: " + ", ".join(bad[:5]))
+    return sorted(names)
+
+
+def host_is_known(name, known):
+    for entry in known:
+        if entry.startswith("*."):
+            if name.endswith(entry[1:]):
+                return True
+        elif name == entry:
+            return True
+    return False

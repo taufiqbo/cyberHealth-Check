@@ -1,8 +1,10 @@
 {% extends "base.html" %}
+{% block topbar %}New assessment{% endblock %}
 {% block content %}
+<p class="eyebrow">Analyst workspace</p>
+<h1>New assessment</h1>
+<p class="lead">Enter a domain or a public IP address. Nothing is contacted until ownership is proven, except the ownership check itself.</p>
 <section class="card narrow">
-  <h1>New assessment</h1>
-  <p>Enter a domain or a public IP address. Nothing is contacted until ownership is proven, except the ownership check itself.</p>
   <form method="post">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <label>Client
@@ -13,6 +15,10 @@
     </label>
     {% if not clients %}<p class="warn">No clients yet: an admin adds them under Team and clients.</p>{% endif %}
     <label>Domain or IP <input name="target" required placeholder="example.com" autocomplete="off"></label>
+    <label>Client's known host names (optional)
+      <textarea name="known_hosts" rows="4" placeholder="www.example.com&#10;mail.example.com&#10;*.shop.example.com"></textarea>
+    </label>
+    <p class="muted">One per line. Discovery flags live host names that are not on this list (EAS-01). You can add or change it later.</p>
     <button>Create and show ownership instructions</button>
   </form>
 </section>

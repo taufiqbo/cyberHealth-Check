@@ -1,8 +1,11 @@
 {% extends "base.html" %}
+{% block topbar %}{{ client.name }}{% endblock %}
 {% block content %}
-<section class="card narrow">
-  <h1>{{ a.target }}</h1>
-  <p>Status: <strong>{{ STATUS_TEXT.get(a.status, a.status) }}</strong>.</p>
+<p class="eyebrow">Assessment #{{ a.id }}</p>
+<h1>{{ a.target }}</h1>
+<p class="lead">Status: <span class="state st-{{ a.status }}">{{ STATUS_TEXT.get(a.status, a.status) }}</span></p>
+<section class="card soft narrow">
+  <h2>Your report is being prepared</h2>
   <p>Results appear here after a reviewer has checked and signed off the assessment. You will get an email when it is ready.</p>
 </section>
 {% endblock %}

@@ -121,14 +121,29 @@ class Service:
         return {i for i in ids if i}
 
     # Assessment lifecycle ----------------------------------------------------
-    def create_assessment(self, actor, client_id, raw_target):
+    def create_assessment(self, actor, client_id, raw_target, known_hosts_text=""):
         target, target_type = ownership.normalise_target(raw_target, allow_private=self.config.demo)
+        known = ownership.parse_known_hosts(known_hosts_text, target) if target_type == "domain" else []
         aid = self.db.run(
-            "INSERT INTO assessments (client_id, target, target_type, status, created_by, created_at, ownership_token)"
-            " VALUES (?, ?, ?, 'awaiting_ownership', ?, ?, ?)",
-            (client_id, target, target_type, actor["id"], now(), ownership.new_token()))
-        audit.record(self.db, "assessment.created", actor, aid, target=target, client_id=client_id)
+            "INSERT INTO assessments (client_id, target, target_type, status, created_by, created_at, ownership_token,"
+            " known_hosts) VALUES (?, ?, ?, 'awaiting_ownership', ?, ?, ?, ?)",
+            (client_id, target, target_type, actor["id"], now(), ownership.new_token(),
+             dumps(known) if known else None))
+        audit.record(self.db, "assessment.created", actor, aid, target=target, client_id=client_id,
+                     known_hosts=len(known))
         return aid
+
+    def set_known_hosts(self, assessment_id, actor, text):
+        """The client's own list of host names. Discovery compares what it finds against it (EAS-01)."""
+        a = self.assessment(assessment_id)
+        if a["signed_off_at"]:
+            raise ValueError("This assessment is signed off and locked.")
+        known = ownership.parse_known_hosts(text, a["target"])
+        self.db.update("assessments", assessment_id, known_hosts=dumps(known) if known else None)
+        audit.record(self.db, "assessment.known_hosts_set", actor, assessment_id, count=len(known))
+        if gate(self.assessment(assessment_id), "discovery") is None:
+            self.enqueue(assessment_id, "discovery", actor)
+        return known
 
     def check_ownership(self, assessment_id, actor=None):
         a = self.assessment(assessment_id)
@@ -266,6 +281,7 @@ class Service:
     def execute(self, run):
         a = self.assessment(run["assessment_id"])
         a["headsup_scope_list"] = loads(a.get("headsup_scope"), [])
+        a["known_hosts_list"] = loads(a.get("known_hosts"), [])
         reason = gate(a, run["module"])
         if reason or a["signed_off_at"]:
             self.db.update("module_runs", run["id"], status="skipped", finished_at=now(),

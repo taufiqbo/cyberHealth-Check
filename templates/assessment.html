@@ -1,23 +1,63 @@
 {% extends "base.html" %}
-{% from "_macros.html" import chip, score_panel %}
-{% block title %}{{ a.target }} · CyberHealth Runner{% endblock %}
+{% from "_macros.html" import chip, donut, icon %}
+{% block title %}{{ a.target }} · {{ BRAND }} CyberHealth{% endblock %}
+{% block topbar %}{{ client.name }}{% endblock %}
 {% block content %}
 {% set locked = a.signed_off_at is not none %}
-<div class="row-between">
+{% set ns = namespace(critical=0, high=0, medium=0, low=0, attention=0) %}
+{% for module, rows in by_module.items() %}{% for r in rows %}
+  {% if r.status in ['fail', 'partial'] %}
+    {% set ns.attention = ns.attention + 1 %}
+    {% set sev = BY_ID[r.control_id].severity %}
+    {% if sev == 'critical' %}{% set ns.critical = ns.critical + 1 %}{% elif sev == 'high' %}{% set ns.high = ns.high + 1 %}{% elif sev == 'medium' %}{% set ns.medium = ns.medium + 1 %}{% else %}{% set ns.low = ns.low + 1 %}{% endif %}
+  {% endif %}
+{% endfor %}{% endfor %}
+
+<div class="page-head">
   <div>
+    <p class="eyebrow">Assessment #{{ a.id }} · {{ client.name }}</p>
     <h1>{{ a.target }}</h1>
-    <p class="muted">#{{ a.id }} · {{ client.name }} · created {{ a.created_at[:16].replace('T', ' ') }} by {{ people[a.created_by].name }}
+    <p class="muted">Created {{ a.created_at[:16].replace('T', ' ') }} by {{ people[a.created_by].name }}
       · <span class="state st-{{ a.status }}">{{ STATUS_TEXT.get(a.status, a.status) }}</span></p>
   </div>
   <div class="actions">
-    <a class="button secondary" href="{{ url_for('report', aid=a.id) }}">{{ 'Report' if locked else 'Draft report' }}</a>
-    {% if 'admin' in roles %}<a class="button secondary" href="{{ url_for('audit_view', assessment=a.id) }}">Audit trail</a>{% endif %}
+    <a class="button secondary" href="{{ url_for('report', aid=a.id) }}">{{ icon('report') }} {{ 'Report' if locked else 'Draft report' }}</a>
+    {% if 'admin' in roles %}<a class="button secondary" href="{{ url_for('audit_view', assessment=a.id) }}">{{ icon('audit') }} Audit trail</a>{% endif %}
   </div>
 </div>
 
-<div class="grid2">
-  {{ score_panel(score) }}
+<div class="stats">
+  <div class="stat">
+    <div class="stat-label">CyberHealth Score</div>
+    <div class="score-card">
+      {{ donut(score) }}
+      <div class="stat-note">{% if score.score is not none %}{{ score.label }}<br>{% endif %}Coverage {{ score.coverage }}%{% if score.provisional %}<br><strong>provisional</strong>{% endif %}</div>
+    </div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Needs attention {{ icon('alert') }}</div>
+    <div class="stat-value">{{ ns.attention }}</div>
+    <div class="stat-note">Failed or partial controls</div>
+    <div class="badges">
+      <span class="count-badge">Critical {{ ns.critical }}</span><span class="count-badge">High {{ ns.high }}</span>
+      <span class="count-badge">Medium {{ ns.medium }}</span><span class="count-badge">Low {{ ns.low }}</span>
+    </div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Flagged for review {{ icon('flag') }}</div>
+    <div class="stat-value">{{ flagged|length }}</div>
+    <div class="stat-note">{{ 'Decide these before sign-off' if flagged else 'Nothing waiting for a decision' }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Assets {{ icon('globe') }}</div>
+    <div class="stat-value">{{ live_hosts|length }}</div>
+    <div class="stat-note">Live host names from public sources{% if known_hosts %}; client list: {{ known_hosts|length }}{% endif %}</div>
+  </div>
+</div>
 
+{% for cap in score.caps %}<div class="flash error">{{ cap }}</div>{% endfor %}
+
+<div class="grid2">
   <section class="card">
     <h2>1. Ownership</h2>
     {% if a.ownership_verified_at %}
@@ -46,16 +86,40 @@
       {% endif %}
     {% endif %}
   </section>
+
+  <section class="card">
+    <h2>2. Client asset list</h2>
+    {% if a.target_type == 'ip' %}
+      <p class="muted">Not used for IP address targets.</p>
+    {% else %}
+      {% if known_hosts %}
+        <p>{{ known_hosts|length }} host name(s) declared by the client. Discovery flags live names that are not on this list (EAS-01).</p>
+      {% else %}
+        <p>No list yet. Without it, a reviewer has to confirm the discovered host names with the client before sign-off.</p>
+      {% endif %}
+      {% if 'analyst' in roles and not locked %}
+      <form method="post" action="{{ url_for('known_hosts', aid=a.id) }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <label>One host name per line (*.sub.example.com covers everything under it)
+          <textarea name="known_hosts" rows="4">{{ known_hosts|join('\n') }}</textarea></label>
+        <button class="secondary">Save list and re-run Discovery</button>
+      </form>
+      {% elif known_hosts %}
+        <pre>{{ known_hosts|join('\n') }}</pre>
+      {% endif %}
+    {% endif %}
+  </section>
 </div>
 
 <section class="card">
-  <h2>2. Modules</h2>
+  <h2>3. Modules</h2>
+  <div class="table-wrap">
   <table class="list">
     <thead><tr><th>Module</th><th>Last run</th><th>Waiting for</th><th></th></tr></thead>
     <tbody>
     {% for key, s in states.items() %}
       <tr>
-        <td>{{ s.label }}</td>
+        <td><strong>{{ s.label }}</strong></td>
         <td>{% if s.latest %}<span class="run r-{{ s.latest.status }}">{{ s.latest.status }}</span>
             {{ (s.latest.finished_at or s.latest.queued_at)[:16].replace('T', ' ') }}
             {% if s.latest.status == 'running' and s.latest.progress %}<br><span class="muted">Now: {{ s.latest.progress }}</span>{% endif %}
@@ -71,12 +135,13 @@
     {% endfor %}
     </tbody>
   </table>
+  </div>
 </section>
 
 {% if 'analyst' in roles and not locked %}
 <div class="grid2">
   <section class="card">
-    <h2>3. Services (Nmap) — provider heads-up</h2>
+    <h2>4. Services (Nmap): provider heads-up</h2>
     {% if a.headsup_at %}
       <p class="ok">Confirmed {{ a.headsup_at[:16].replace('T', ' ') }} by {{ people[a.headsup_by].name }}: {{ a.headsup_note }}</p>
       <p>Scope: {{ headsup_scope|join(', ') }}</p>
@@ -95,7 +160,7 @@
   </section>
 
   <section class="card">
-    <h2>4. Vulnerabilities — approval and report</h2>
+    <h2>5. Vulnerabilities: approval and report</h2>
     {% if a.approval_at %}
       <p class="ok">Written approval recorded {{ a.approval_at[:16].replace('T', ' ') }} by {{ people[a.approval_by].name }}: {{ a.approval_note }}</p>
     {% else %}
@@ -119,19 +184,23 @@
 {% endif %}
 
 <section class="card">
-  <div class="row-between">
-    <h2>5. Results</h2>
+  <div class="section-head">
+    <h2>6. Findings and actions</h2>
     <p class="muted">{{ flagged|length }} flagged for a human decision</p>
   </div>
+  <nav class="pills" aria-label="Modules">
+    {% for module in by_module %}<a href="#m-{{ module }}">{{ MODULES[module] }}{% if score.modules[module].score is not none %} · {{ score.modules[module].score }}{% endif %}</a>{% endfor %}
+  </nav>
   {% for module, rows in by_module.items() %}
-    <h3>{{ MODULES[module] }}</h3>
+    <h3 id="m-{{ module }}">{{ MODULES[module] }}{% if score.modules[module].score is not none %} · {{ score.modules[module].score }}{% endif %}</h3>
+    <div class="table-wrap">
     <table class="results">
       {% for r in rows %}
       {% set c = BY_ID[r.control_id] %}
       <tr id="{{ r.control_id }}" class="{{ 'flagged' if r.needs_review and not r.reviewed_at else '' }}">
         <td class="cid">{{ r.control_id }}<br><span class="sev sev-{{ c.severity }}">{{ c.severity }}</span></td>
         <td>
-          <strong>{{ c.title }}</strong> {{ chip(r.status) }}
+          <span class="result-title">{{ c.title }}</span> {{ chip(r.status) }}
           {% if r.needs_review and not r.reviewed_at %}<span class="chip s-flag">Flagged</span>{% endif %}
           <div>{{ r.summary }}</div>
           {% if r.reviewed_at %}
@@ -145,10 +214,10 @@
               <summary>Review</summary>
               <form method="post" action="{{ url_for('review', aid=a.id, control_id=r.control_id) }}">
                 <input type="hidden" name="csrf" value="{{ csrf }}">
-                <select name="status">
+                <select name="status" aria-label="Decision for {{ r.control_id }}">
                   {% for ch in choices %}<option value="{{ ch }}" {% if ch == r.status %}selected{% endif %}>{{ STATUS_LABELS[ch] }}</option>{% endfor %}
                 </select>
-                <input name="note" placeholder="Note (required if you change the result)">
+                <input name="note" placeholder="Note (required if you change the result)" aria-label="Note for {{ r.control_id }}">
                 <button class="small">Save</button>
               </form>
             </details>
@@ -157,11 +226,12 @@
       </tr>
       {% endfor %}
     </table>
+    </div>
   {% endfor %}
 </section>
 
 <section class="card">
-  <h2>6. Sign-off</h2>
+  <h2>7. Sign-off</h2>
   {% if locked %}
     <p class="ok">Signed off {{ a.signed_off_at[:16].replace('T', ' ') }} by {{ people[a.signed_off_by].name }}{% if a.self_signoff %} (self sign-off: only reviewer on the team; recorded in the audit trail){% endif %}.
       {% if a.signoff_note %}Note: {{ a.signoff_note }}{% endif %}</p>
@@ -172,7 +242,7 @@
       <form method="post" action="{{ url_for('signoff', aid=a.id) }}">
         <input type="hidden" name="csrf" value="{{ csrf }}">
         <label>Sign-off note (optional) <input name="note"></label>
-        <button>Sign off and notify the client</button>
+        <button class="primary">Sign off and notify the client</button>
       </form>
     {% else %}
       <p class="muted">{{ why_not }}</p>
@@ -185,6 +255,7 @@
 <section class="card">
   <details>
     <summary>Run history</summary>
+    <div class="table-wrap">
     <table class="list">
       <thead><tr><th>#</th><th>Module</th><th>Status</th><th>By</th><th>Queued</th><th>Finished</th><th>Evidence sha256</th></tr></thead>
       {% for r in runs %}
@@ -194,6 +265,7 @@
         <td>{% if r.evidence_path %}<a href="{{ url_for('evidence', aid=a.id, run_id=r.id) }}"><code>{{ r.evidence_sha256[:16] }}…</code></a>{% endif %}</td></tr>
       {% endfor %}
     </table>
+    </div>
   </details>
 </section>
 {% endblock %}

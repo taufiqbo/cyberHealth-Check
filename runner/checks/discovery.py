@@ -3,6 +3,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 
 from ..net import NetError, is_public_ip
+from ..ownership import host_is_known
 from . import all_status, result
 
 COMMON_NAMES = ["www", "mail", "webmail", "remote", "vpn", "portal", "owa", "autodiscover", "api", "app",
@@ -86,6 +87,19 @@ def run(ctx):
     else:
         sources["amass"] = {"skipped": "amass not installed"}
 
+    subfinder = net.tool_argv("subfinder")
+    if subfinder:
+        ctx.progress("running subfinder (passive sources)")
+        try:
+            rc, out, err = net.run([*subfinder, "-d", domain, "-silent"], timeout=600)
+            found = {n for n in (_clean(line.strip(), domain) for line in out.splitlines() if line.strip()) if n}
+            names |= found
+            sources["subfinder"] = {"names": len(found), "exit_code": rc}
+        except NetError as exc:
+            sources["subfinder"] = {"error": str(exc)}
+    else:
+        sources["subfinder"] = {"skipped": "subfinder not installed"}
+
     names |= {f"{n}.{domain}" for n in COMMON_NAMES}
     ordered = sorted(names, key=lambda n: (n != domain, n != f"www.{domain}", n))[:MAX_NAMES]
     ctx.progress(f"resolving {len(ordered)} host names in DNS")
@@ -112,17 +126,32 @@ def run(ctx):
                          "primary_host": primary, "scan_scope": scope})
     results = []
 
-    # EAS-01
-    ct_ok = "error" not in sources["certificate_transparency"]
-    inventory = {"hostnames_found": len(hosts), "hostnames_resolving": len(resolving),
-                 "resolving": [h["name"] for h in resolving][:200], "sources": sources}
-    if ct_ok or "names" in sources.get("amass", {}):
-        results.append(result("EAS-01", "pass",
-                              f"Inventory built: {len(hosts)} host names found, {len(resolving)} resolve.", inventory))
+    # EAS-01: compare what the internet shows with what the client says they have.
+    discovered_ok = any("names" in sources.get(k, {}) for k in ("certificate_transparency", "amass", "subfinder"))
+    live = [h["name"] for h in resolving]
+    known = ctx.assessment.get("known_hosts_list") or []
+    unknown = [n for n in live if not host_is_known(n, known)]
+    missing = [k for k in known if not k.startswith("*.") and k not in live]
+    inventory = {"hostnames_found": len(hosts), "hostnames_resolving": len(live), "resolving": live[:200],
+                 "client_list": known, "not_on_client_list": unknown[:200], "on_list_not_found": missing,
+                 "sources": sources}
+    gap = "" if discovered_ok else (" Certificate logs could not be reached and no Amass or subfinder ran, "
+                                    "so the list may be incomplete.")
+    if not known:
+        results.append(result("EAS-01", "review",
+                              f"{len(live)} live host name(s) found. No client asset list was given: reviewer to "
+                              "confirm these names with the client, or add the client's list and re-run Discovery."
+                              + gap, inventory))
+    elif not unknown:
+        results.append(result("EAS-01", "pass" if discovered_ok else "inconclusive",
+                              f"All {len(live)} live host name(s) are on the client's asset list"
+                              + (f"; {len(missing)} listed name(s) were not seen." if missing else ".") + gap,
+                              inventory))
     else:
-        results.append(result("EAS-01", "inconclusive",
-                              "Certificate transparency could not be reached and Amass is not installed; "
-                              f"only common names were checked ({len(resolving)} resolve).", inventory))
+        results.append(result("EAS-01", "partial" if len(unknown) <= 2 else "fail",
+                              f"{len(unknown)} live host name(s) are not on the client's asset list: "
+                              + ", ".join(unknown[:6]) + (" …" if len(unknown) > 6 else "")
+                              + ". Reviewer to confirm with the client." + gap, inventory, review=True))
 
     # EAS-02
     ctx.progress("checking CNAME records for dangling targets")

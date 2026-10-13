@@ -12,6 +12,13 @@ RUN if [ -n "$AMASS_VERSION" ]; then \
       && unzip -j /tmp/amass.zip '*/amass' -d /usr/local/bin && chmod +x /usr/local/bin/amass && rm /tmp/amass.zip; \
     fi
 
+# Optional: subfinder for extra passive discovery. Build with --build-arg SUBFINDER_VERSION=2.6.6 to include it.
+ARG SUBFINDER_VERSION=""
+RUN if [ -n "$SUBFINDER_VERSION" ]; then \
+      curl -fsSL -o /tmp/subfinder.zip "https://github.com/projectdiscovery/subfinder/releases/download/v${SUBFINDER_VERSION}/subfinder_${SUBFINDER_VERSION}_linux_amd64.zip" \
+      && unzip -o /tmp/subfinder.zip subfinder -d /usr/local/bin && chmod +x /usr/local/bin/subfinder && rm /tmp/subfinder.zip; \
+    fi
+
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt dnstwist

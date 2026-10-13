@@ -1,14 +1,16 @@
 {% extends "base.html" %}
+{% block topbar %}Audit trail{% endblock %}
 {% block content %}
+<p class="eyebrow">Administration</p>
 <h1>Audit trail{% if aid %} — assessment #{{ aid }}{% endif %}</h1>
 {% if chain_ok %}<p class="ok">Hash chain intact: no entry has been changed or removed.</p>
 {% else %}<p class="warn">Hash chain broken at entry #{{ bad_id }}: the audit table has been edited outside the application.</p>{% endif %}
-<table class="list">
+<section class="card"><div class="table-wrap"><table class="list">
   <thead><tr><th>#</th><th>When (UTC)</th><th>Who</th><th>Action</th><th>Assessment</th><th>Detail</th></tr></thead>
   {% for r in rows %}
   <tr><td>{{ r.id }}</td><td>{{ r.at[:19].replace('T', ' ') }}</td><td>{{ r.actor }}</td><td>{{ r.action }}</td>
     <td>{% if r.assessment_id %}<a href="{{ url_for('assessment', aid=r.assessment_id) }}">#{{ r.assessment_id }}</a>{% endif %}</td>
     <td><code class="wrap">{{ r.detail or '' }}</code></td></tr>
   {% endfor %}
-</table>
+</table></div></section>
 {% endblock %}

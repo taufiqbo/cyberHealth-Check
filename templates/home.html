@@ -1,28 +1,64 @@
 {% extends "base.html" %}
-{% from "_macros.html" import chip %}
+{% from "_macros.html" import icon %}
+{% block topbar %}{{ 'Your organisation' if 'client' in roles else BRAND ~ ' CyberHealth' }}{% endblock %}
 {% block content %}
-<div class="row-between">
-  <h1>Assessments</h1>
-  {% if 'analyst' in roles %}<a class="button" href="{{ url_for('new_assessment') }}">New assessment</a>{% endif %}
+{% set is_client = 'client' in roles %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">{{ 'Organisation workspace' if is_client else 'Control centre' }}</p>
+    <h1>{{ 'Dashboard' if is_client else 'Assessments' }}</h1>
+    <p class="lead">{{ 'Security observations for your domains.' if is_client else 'Every External CyberHealth Check, from ownership proof to sign-off.' }}</p>
+  </div>
+  {% if 'analyst' in roles %}<a class="button" href="{{ url_for('new_assessment') }}">{{ icon('plus') }} New assessment</a>{% endif %}
 </div>
-{% if not assessments %}
-  <p class="muted">No assessments yet.</p>
-{% else %}
-<table class="list">
-  <thead><tr><th>#</th><th>Target</th><th>Client</th><th>Status</th><th>Flagged</th><th>Score</th><th>Created</th></tr></thead>
-  <tbody>
-  {% for a in assessments %}
-  <tr>
-    <td>{{ a.id }}</td>
-    <td><a href="{{ url_for('assessment', aid=a.id) }}">{{ a.target }}</a></td>
-    <td>{{ a.client_name }}</td>
-    <td><span class="state st-{{ a.status }}">{{ STATUS_TEXT.get(a.status, a.status) }}</span></td>
-    <td>{% if 'client' not in roles %}{{ a.flagged }}{% else %}–{% endif %}</td>
-    <td>{% if a.score and a.score.score is not none %}{{ a.score.score }} ({{ a.score.grade }}){% else %}–{% endif %}</td>
-    <td>{{ a.created_at[:10] }}</td>
-  </tr>
-  {% endfor %}
-  </tbody>
-</table>
+
+{% set signed = assessments|selectattr('status', 'equalto', 'signed_off')|list %}
+{% set review = assessments|selectattr('status', 'equalto', 'in_review')|list %}
+{% set waiting = assessments|selectattr('status', 'equalto', 'awaiting_ownership')|list %}
+<div class="stats">
+  <div class="stat"><div class="stat-label">Assessments {{ icon('globe') }}</div><div class="stat-value">{{ assessments|length }}</div><div class="stat-note">{{ (assessments|map(attribute='target')|unique|list)|length }} domain(s)</div></div>
+  <div class="stat"><div class="stat-label">Signed off {{ icon('check') }}</div><div class="stat-value">{{ signed|length }}</div><div class="stat-note">Reports available</div></div>
+  <div class="stat"><div class="stat-label">In review {{ icon('flag') }}</div><div class="stat-value">{{ review|length }}</div><div class="stat-note">{{ 'Waiting for our reviewers' if is_client else 'Waiting for a reviewer decision' }}</div></div>
+  <div class="stat"><div class="stat-label">Awaiting ownership {{ icon('shield') }}</div><div class="stat-value">{{ waiting|length }}</div><div class="stat-note">Token not yet published</div></div>
+</div>
+
+{% if signed %}
+<section class="card">
+  <h2>Assessment history</h2>
+  <p class="muted">Select a signed-off result to open its report.</p>
+  <div class="history">
+    {% for a in signed[:8] %}
+      <a href="{{ url_for('report', aid=a.id) }}">{{ a.signed_off_at[:10] }} · {{ a.target }}
+        <strong>{{ a.score.score if a.score and a.score.score is not none else '–' }}{% if a.score and a.score.grade %} · {{ a.score.grade }}{% endif %}</strong>
+        {{ a.score.label if a.score else '' }}</a>
+    {% endfor %}
+  </div>
+</section>
 {% endif %}
+
+<section class="card">
+  <h2>All assessments</h2>
+  {% if not assessments %}
+    <p class="muted">No assessments yet.</p>
+  {% else %}
+  <div class="table-wrap">
+  <table class="list">
+    <thead><tr><th>#</th><th>Target</th><th>Client</th><th>Status</th><th>Flagged</th><th>Score</th><th>Created</th></tr></thead>
+    <tbody>
+    {% for a in assessments %}
+    <tr>
+      <td>{{ a.id }}</td>
+      <td><a href="{{ url_for('assessment', aid=a.id) }}"><strong>{{ a.target }}</strong></a></td>
+      <td>{{ a.client_name }}</td>
+      <td><span class="state st-{{ a.status }}">{{ STATUS_TEXT.get(a.status, a.status) }}</span></td>
+      <td>{% if 'client' not in roles %}{{ a.flagged }}{% else %}–{% endif %}</td>
+      <td>{% if a.score and a.score.score is not none %}<strong>{{ a.score.score }}</strong> ({{ a.score.grade }}){% else %}–{% endif %}</td>
+      <td>{{ a.created_at[:10] }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+</section>
 {% endblock %}

@@ -1,13 +1,16 @@
 {% extends "base.html" %}
+{% block topbar %}My account{% endblock %}
 {% block content %}
+<p class="eyebrow">Your workspace</p>
+<h1>My account</h1>
+<p class="lead">{{ user.email }} · roles: {{ user.roles.replace(',', ', ') }}</p>
 <section class="card narrow">
-  <h1>Your account</h1>
-  <p>{{ user.email }} · roles: {{ user.roles.replace(',', ', ') }}</p>
-  <h2>Change password</h2>
+  <h2>Password</h2>
+  <p class="muted">New passwords need at least 10 characters.</p>
   <form method="post">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <label>Current password <input type="password" name="current" required autocomplete="current-password"></label>
-    <label>New password (10 characters or more) <input type="password" name="new" required minlength="10" autocomplete="new-password"></label>
+    <label>New password <input type="password" name="new" required minlength="10" autocomplete="new-password"></label>
     <label>Repeat new password <input type="password" name="confirm" required minlength="10" autocomplete="new-password"></label>
     <button>Change password</button>
   </form>

@@ -1,16 +1,38 @@
 {% extends "base.html" %}
-{% block content %}
-<section class="card narrow">
-  <h1>Sign in</h1>
-  <form method="post">
-    <input type="hidden" name="csrf" value="{{ csrf }}">
-    <label>Email <input type="email" name="email" required autofocus autocomplete="username"></label>
-    <label>Password <input type="password" name="password" required autocomplete="current-password"></label>
-    <button>Sign in</button>
-  </form>
-  {% if DEMO %}
-  <p class="muted">Demo logins: admin@demo.example / demo-admin, analyst@demo.example / demo-analyst,
-    reviewer@demo.example / demo-reviewer, client@client-example.com / demo-client.</p>
-  {% endif %}
-</section>
+{% from "_macros.html" import icon %}
+{% block title %}Sign in · {{ BRAND }} CyberHealth{% endblock %}
+{% block public %}
+<div class="auth">
+  <section class="auth-hero">
+    <p class="eyebrow">{{ BRAND }} CyberHealth</p>
+    <h1>External security.<br>Proven and reviewed.</h1>
+    <p>See what the internet sees of your domains, follow assessment results and download reports for management.</p>
+    <ul class="ticks">
+      <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg> Ownership proven before any check</li>
+      <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg> Every result reviewed by a person</li>
+      <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg> CyberHealth Score and client-ready reports</li>
+    </ul>
+  </section>
+  <section class="auth-panel">
+    <div class="auth-card">
+      <div class="badge-icon">{{ icon('shield') }}</div>
+      <h1>Sign in</h1>
+      <p class="muted">Use the account created by your administrator.</p>
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for cat, msg in messages %}<div class="flash {{ cat }}">{{ msg }}</div>{% endfor %}
+      {% endwith %}
+      <form method="post">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <label>Email <input type="email" name="email" required autofocus autocomplete="username"></label>
+        <label>Password <input type="password" name="password" required autocomplete="current-password"></label>
+        <button>Sign in</button>
+      </form>
+      <p class="muted">Only administrators can create accounts.</p>
+      {% if DEMO %}
+      <p class="muted">Demo logins: admin@demo.example / demo-admin, analyst@demo.example / demo-analyst,
+        reviewer@demo.example / demo-reviewer, client@client-example.com / demo-client.</p>
+      {% endif %}
+    </div>
+  </section>
+</div>
 {% endblock %}

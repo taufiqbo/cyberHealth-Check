@@ -17,13 +17,14 @@ any other domain needs a manually recorded proof, and then most checks come back
 1. A server with the static IP. Open ports 80/443 inbound; allow outbound DNS, HTTP(S) and the ports Nmap needs.
 2. `cp .env.example .env`, edit it, then `docker compose up -d --build`.
 3. Browse to your RUNNER_HOST and sign in with RUNNER_ADMIN_EMAIL / PASSWORD. Add people under Team and clients.
-4. Optional tools: dnstwist outside Docker: `pip install dnstwist` (found through Python even when its folder is not on PATH). Amass (`docker compose build --build-arg AMASS_VERSION=v4.2.0`, or install the binary on the image; used automatically if found). dnstwist and Nmap are already in the image.
+4. Optional tools: subfinder (`--build-arg SUBFINDER_VERSION=2.6.6`, or on PATH), dnstwist outside Docker: `pip install dnstwist` (found through Python even when its folder is not on PATH). Amass (`docker compose build --build-arg AMASS_VERSION=v4.2.0`, or install the binary on the image; used automatically if found). dnstwist and Nmap are already in the image.
 5. Tell the hosting providers the scan IP address. Backups: copy the `runner-data` volume (database and evidence).
 
 Run the tests: `python3 -m pytest -q test_app.py`.
 
 ## How an assessment flows
-1. **Analyst** creates it (client + domain or IP). The page shows a token.
+1. **Analyst** creates it (client + domain or IP, and optionally the client's own list of host names). The page shows a token.
+   Live host names that are not on the client's list become an EAS-01 finding; without a list, EAS-01 goes to the reviewer.
 2. **Ownership**: the client publishes the token as a TXT record at `_cyberhealth.<domain>` (value `cyberhealth-verify=<token>`)
    or as a file at `/.well-known/cyberhealth-verify.txt`. The system re-checks every 10 minutes for 14 days.
    The analyst can instead record other proof (signed letter, registrar email) with a written note.
@@ -40,7 +41,7 @@ Every action goes into an append-only, hash-chained audit trail.
 ## What runs and what waits
 | Module | Controls | How | Needs |
 |---|---|---|---|
-| Discovery | EAS-01..05 | crt.sh / CertSpotter, Amass, DNS | ownership proof |
+| Discovery | EAS-01..05 | crt.sh / CertSpotter, Amass, subfinder, DNS; compared with the client's asset list | ownership proof |
 | TLS | TLS-01..07 | handshakes, HTTP HEAD | ownership proof |
 | Email | EML-01..07 | DNS TXT | ownership proof |
 | Web | WEB-01..08, VUL-05 | HTTP GET of home pages, security.txt | ownership proof |

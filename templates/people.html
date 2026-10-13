@@ -1,5 +1,7 @@
 {% extends "base.html" %}
+{% block topbar %}Team and clients{% endblock %}
 {% block content %}
+<p class="eyebrow">Administration</p>
 <h1>Team and clients</h1>
 <div class="grid2">
   <section class="card">
@@ -32,7 +34,7 @@
 </div>
 <section class="card">
   <h2>People</h2>
-  <table class="list">
+  <div class="table-wrap"><table class="list">
     <thead><tr><th>Name</th><th>Email</th><th>Roles</th><th>Client</th><th>Status</th><th></th></tr></thead>
     {% for u in users %}
     <tr>
@@ -55,6 +57,6 @@
       </td>
     </tr>
     {% endfor %}
-  </table>
+  </table></div>
 </section>
 {% endblock %}

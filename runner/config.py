@@ -44,6 +44,9 @@ class Config:
     inline_worker: bool = True
     secure_cookies: bool = False
     tool_paths: dict = field(default_factory=dict)
+    brand_name: str = "BINTARA"
+    brand_tagline: str = "We get IT Done. Delivered"
+    brand_contact: str = ""
 
     @property
     def db_path(self):
@@ -92,10 +95,14 @@ def load_config(**overrides):
         ownership_give_up_days=_int("RUNNER_OWNERSHIP_GIVE_UP_DAYS", 14),
         inline_worker=_bool("RUNNER_INLINE_WORKER", True),
         secure_cookies=_bool("RUNNER_SECURE_COOKIES", not demo),
+        brand_name=os.environ.get("RUNNER_BRAND_NAME", "BINTARA"),
+        brand_tagline=os.environ.get("RUNNER_BRAND_TAGLINE", "We get IT Done. Delivered"),
+        brand_contact=os.environ.get("RUNNER_BRAND_CONTACT", ""),
         tool_paths={
             "nmap": os.environ.get("NMAP_PATH", "nmap"),
             "dnstwist": os.environ.get("DNSTWIST_PATH", "dnstwist"),
             "amass": os.environ.get("AMASS_PATH", "amass"),
+            "subfinder": os.environ.get("SUBFINDER_PATH", "subfinder"),
         },
     )
     for key, value in overrides.items():

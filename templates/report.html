@@ -1,43 +1,54 @@
 {% extends "base.html" %}
-{% from "_macros.html" import chip, score_panel %}
+{% from "_macros.html" import chip, score_panel, icon %}
 {% block title %}CyberHealth report · {{ a.target }}{% endblock %}
+{% block topbar %}{{ client.name }}{% endblock %}
 {% block content %}
 {% if not a.signed_off_at %}<div class="draft">DRAFT — not reviewed or signed off. Not for the client.</div>{% endif %}
-<section class="card report-head">
-  <h1>External CyberHealth Check: {{ a.target }}</h1>
-  <p>{{ client.name }}{% if a.signed_off_at %} · signed off {{ a.signed_off_at[:10] }} by {{ signer.name }}{% endif %} · CyberHealth Score v{{ score.version }}</p>
-  <p class="muted">An outside-in check of what the internet can see. It is not a penetration test: nothing was exploited and no login was attempted.</p>
-  <p><a href="{{ url_for('report_json', aid=a.id) }}">Download as JSON</a></p>
-</section>
-{{ score_panel(score) }}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">{{ BRAND }} CyberHealth report</p>
+    <h1>External CyberHealth Check: {{ a.target }}</h1>
+    <p class="muted">{{ client.name }}{% if a.signed_off_at %} · signed off {{ a.signed_off_at[:10] }} by {{ signer.name }}{% endif %} · CyberHealth Score v{{ score.version }}</p>
+  </div>
+  <div class="actions no-print">
+    <a class="button secondary" href="{{ url_for('report_json', aid=a.id) }}">{{ icon('report') }} Download as JSON</a>
+  </div>
+</div>
+<p class="lead">An outside-in check of what the internet can see. It is not a penetration test: nothing was exploited and no login was attempted. Use your browser's Print (Ctrl+P) to save this report as PDF.</p>
 
-<section class="card">
-  <h2>What to fix first</h2>
-  {% set ns = namespace(any=false) %}
-  <ol>
-  {% for sev in ['critical', 'high', 'medium', 'low'] %}
-    {% for module, rows in by_module.items() %}{% for r in rows %}
-      {% set c = BY_ID[r.control_id] %}
-      {% if c.severity == sev and r.status in ['fail', 'partial'] %}
-        {% set ns.any = true %}
-        <li><strong>{{ c.title }}</strong> <span class="sev sev-{{ sev }}">{{ sev }}</span> {{ chip(r.status) }}<br>
-          {{ r.summary }}<br><em>Fix:</em> {{ c.fix }}</li>
-      {% endif %}
-    {% endfor %}{% endfor %}
-  {% endfor %}
-  </ol>
-  {% if not ns.any %}<p>Nothing failed. Keep it that way with a check every quarter.</p>{% endif %}
-</section>
+<div class="grid2">
+  {{ score_panel(score) }}
+  <section class="card">
+    <h2>What to fix first</h2>
+    {% set ns = namespace(any=false) %}
+    <ol>
+    {% for sev in ['critical', 'high', 'medium', 'low'] %}
+      {% for module, rows in by_module.items() %}{% for r in rows %}
+        {% set c = BY_ID[r.control_id] %}
+        {% if c.severity == sev and r.status in ['fail', 'partial'] %}
+          {% set ns.any = true %}
+          <li><strong>{{ c.title }}</strong> <span class="sev sev-{{ sev }}">{{ sev }}</span> {{ chip(r.status) }}<br>
+            {{ r.summary }}<br><em>Fix:</em> {{ c.fix }}</li>
+        {% endif %}
+      {% endfor %}{% endfor %}
+    {% endfor %}
+    </ol>
+    {% if not ns.any %}<p>Nothing failed. Keep it that way with a check every quarter.</p>{% endif %}
+  </section>
+</div>
 
 {% for module, rows in by_module.items() %}
 <section class="card">
-  <h2>{{ MODULES[module] }}{% if score.modules[module].score is not none %} — {{ score.modules[module].score }}{% endif %}</h2>
+  <div class="section-head">
+    <h2>{{ MODULES[module] }}</h2>
+    {% if score.modules[module].score is not none %}<span class="state">{{ score.modules[module].score }} / 100</span>{% endif %}
+  </div>
   <table class="results">
   {% for r in rows %}
     {% set c = BY_ID[r.control_id] %}
     <tr>
-      <td class="cid">{{ r.control_id }}</td>
-      <td><strong>{{ c.title }}</strong> {{ chip(r.status) }}
+      <td class="cid">{{ r.control_id }}<br><span class="sev sev-{{ c.severity }}">{{ c.severity }}</span></td>
+      <td><span class="result-title">{{ c.title }}</span> {{ chip(r.status) }}
         <div>{{ r.summary }}</div>
         {% if r.review_note %}<div class="review-note">Reviewer: {{ r.review_note }}</div>{% endif %}
         <div class="muted">Why it matters: {{ c.why }}</div>

@@ -1,7 +1,9 @@
 {% extends "base.html" %}
+{% block topbar %}Notifications{% endblock %}
 {% block content %}
+<p class="eyebrow">Administration</p>
 <h1>Notifications</h1>
-<table class="list">
+<section class="card"><div class="table-wrap"><table class="list">
   <thead><tr><th>When (UTC)</th><th>Kind</th><th>To</th><th>Subject</th><th>Delivery</th></tr></thead>
   {% for n in rows %}
   <tr><td>{{ n.created_at[:16].replace('T', ' ') }}</td><td>{{ n.kind }}</td><td>{{ n.recipient }}</td>
@@ -10,5 +12,5 @@
   {% else %}
   <tr><td colspan="5" class="muted">No notifications yet.</td></tr>
   {% endfor %}
-</table>
+</table></div></section>
 {% endblock %}
