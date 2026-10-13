@@ -134,6 +134,13 @@ class DemoNet:
     def which(self, tool):
         return {"nmap": "nmap", "dnstwist": "dnstwist"}.get(tool)
 
+    def tool_argv(self, tool):
+        path = self.which(tool)
+        return [path] if path else None
+
+    def whois(self, domain, timeout=20):
+        raise NetError("demo mode has no network")
+
     def run(self, argv, timeout=1800):
         tool = argv[0]
         if tool == "dnstwist":

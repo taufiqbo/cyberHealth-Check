@@ -453,3 +453,41 @@ def test_hanging_module_times_out_and_queue_moves_on(live, monkeypatch):
     assert runs["tls"]["status"] == "done" and service.assessment(aid)["status"] == "in_review"
     statuses = {r["control_id"]: r["status"] for r in service.results(aid)}
     assert statuses["EAS-01"] == "inconclusive"
+
+
+@pytest.mark.parametrize("text,expiry,locked", [
+    ("Domain Name: bintara.com.my\nExpiry Date: 2027-03-10T00:00:00Z\nDomain Status: clientTransferProhibited\n",
+     "2027-03-10", True),
+    ("[Record Created]   10-Mar-2015\n[Record Expired]   10-Mar-2027\n", "2027-03-10", None),
+    ("Registry Expiry Date: 2027-01-05\nDomain Status: ok https://icann.org/epp#ok\n", "2027-01-05", False),
+    ("No match for domain\n", None, None),
+])
+def test_whois_parsing(text, expiry, locked):
+    from runner.checks.brand import parse_whois
+    got_expiry, got_locked = parse_whois(text)
+    assert (got_expiry.date().isoformat() if got_expiry else None, got_locked) == (expiry, locked)
+
+
+def test_registration_falls_back_to_whois_when_rdap_has_nothing():
+    from runner.checks.brand import _registration_result
+    from runner.net import NetError
+
+    class Net(DemoNet):
+        def rdap(self, domain):
+            raise NetError("404 Not Found")
+
+        def whois(self, domain, timeout=20):
+            return "whois.mynic.my", "Expiry Date: 2099-01-01\nDomain Status: clientTransferProhibited\n"
+    r = _registration_result(_ctx(Net(), "bintara.com.my"))
+    assert r["status"] == "pass" and "WHOIS" in r["summary"]
+
+
+def test_dnstwist_found_through_python_when_not_on_path(monkeypatch, tmp_path):
+    import importlib.util
+    import sys
+    from runner.net import LiveNet
+    net = LiveNet(load_config(data_dir=tmp_path, demo=False))
+    monkeypatch.setattr(net, "which", lambda tool: None)
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: object() if name == "dnstwist" else None)
+    assert net.tool_argv("dnstwist") == [sys.executable, "-m", "dnstwist"]
+    assert net.tool_argv("nmap") is None

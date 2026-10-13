@@ -17,7 +17,7 @@ any other domain needs a manually recorded proof, and then most checks come back
 1. A server with the static IP. Open ports 80/443 inbound; allow outbound DNS, HTTP(S) and the ports Nmap needs.
 2. `cp .env.example .env`, edit it, then `docker compose up -d --build`.
 3. Browse to your RUNNER_HOST and sign in with RUNNER_ADMIN_EMAIL / PASSWORD. Add people under Team and clients.
-4. Optional tools: Amass (`docker compose build --build-arg AMASS_VERSION=v4.2.0`, or install the binary on the image; used automatically if found). dnstwist and Nmap are already in the image.
+4. Optional tools: dnstwist outside Docker: `pip install dnstwist` (found through Python even when its folder is not on PATH). Amass (`docker compose build --build-arg AMASS_VERSION=v4.2.0`, or install the binary on the image; used automatically if found). dnstwist and Nmap are already in the image.
 5. Tell the hosting providers the scan IP address. Backups: copy the `runner-data` volume (database and evidence).
 
 Run the tests: `python3 -m pytest -q test_app.py`.
@@ -44,7 +44,7 @@ Every action goes into an append-only, hash-chained audit trail.
 | TLS | TLS-01..07 | handshakes, HTTP HEAD | ownership proof |
 | Email | EML-01..07 | DNS TXT | ownership proof |
 | Web | WEB-01..08, VUL-05 | HTTP GET of home pages, security.txt | ownership proof |
-| Brand | BRD-01..04 | dnstwist, RDAP | ownership proof |
+| Brand | BRD-01..04 | dnstwist, RDAP (WHOIS where the registry has no RDAP, e.g. .my) | ownership proof |
 | Services | SVC-01..05 | Nmap twice | ownership proof + provider heads-up confirmed |
 | Lifecycle | LCY-01..03 | banners and Nmap versions vs end-of-life data | none |
 | Vulnerabilities | VUL-01..04 | Greenbone/OpenVAS XML report import, CISA KEV, NVD | ownership proof + written provider approval and the report |

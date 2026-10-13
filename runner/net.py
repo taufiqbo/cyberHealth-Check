@@ -1,11 +1,13 @@
 """Everything that touches the network goes through a Net object, so demo mode and
 the tests can swap in fixtures (see demo_net.py)."""
+import importlib.util
 import ipaddress
 import json
 import shutil
 import socket
 import ssl
 import subprocess
+import sys
 import time
 from dataclasses import dataclass, field
 
@@ -320,6 +322,43 @@ class LiveNet:
     # External tools ---------------------------------------------------------
     def which(self, tool):
         return shutil.which(self.config.tool_paths.get(tool, tool))
+
+    def tool_argv(self, tool):
+        """How to start a tool, or None. dnstwist installed by pip often lands in a Scripts folder that is
+        not on PATH (Windows), so fall back to running it through this Python."""
+        path = self.which(tool)
+        if path:
+            return [path]
+        if tool == "dnstwist" and importlib.util.find_spec("dnstwist"):
+            return [sys.executable, "-m", "dnstwist"]
+        return None
+
+    def whois(self, domain, timeout=20):
+        """Plain WHOIS (port 43), for registries without RDAP such as .my. Asks IANA for the right server."""
+        tld = domain.rsplit(".", 1)[-1]
+        referral = self._whois_query("whois.iana.org", tld, timeout)
+        server = next((line.split(":", 1)[1].strip() for line in referral.splitlines()
+                       if line.lower().startswith(("refer:", "whois:")) and line.split(":", 1)[1].strip()), None)
+        if not server:
+            raise NetError(f"no WHOIS server known for .{tld}")
+        return server, self._whois_query(server, domain, timeout)
+
+    @staticmethod
+    def _whois_query(server, query, timeout):
+        try:
+            with socket.create_connection((server, 43), timeout=timeout) as sock:
+                sock.settimeout(timeout)
+                sock.sendall(query.encode() + b"\r\n")
+                chunks, size = [], 0
+                while size < 200_000:
+                    chunk = sock.recv(8192)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    size += len(chunk)
+        except OSError as exc:
+            raise NetError(f"WHOIS {server}: {exc.__class__.__name__}: {exc}") from exc
+        return b"".join(chunks).decode("utf-8", "replace")
 
     def run(self, argv, timeout=1800):
         try:
