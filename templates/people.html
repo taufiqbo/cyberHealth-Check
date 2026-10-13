@@ -26,10 +26,22 @@
       <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="add_client">
       <label>Client name <input name="name" required></label>
       <label>Contact email (gets the sign-off notice) <input type="email" name="contact_email"></label>
+      <label>Tier
+        <select name="tier">{% for key, label in tiers.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select>
+      </label>
       <button>Add client</button>
     </form>
-    <h3>Clients</h3>
-    <ul>{% for c in clients %}<li>{{ c.name }}{% if c.contact_email %} · {{ c.contact_email }}{% endif %}</li>{% else %}<li class="muted">None yet.</li>{% endfor %}</ul>
+    <h3>Clients and tiers</h3>
+    <p class="muted">The tier decides which report every user of that client can download.</p>
+    {% for c in clients %}
+      <form method="post" class="tier-row">
+        <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="set_tier">
+        <input type="hidden" name="client_id" value="{{ c.id }}">
+        <span><strong>{{ c.name }}</strong>{% if c.contact_email %}<br><span class="muted">{{ c.contact_email }}</span>{% endif %}</span>
+        <select name="tier" aria-label="Tier for {{ c.name }}">{% for key, label in tiers.items() %}<option value="{{ key }}" {% if c.tier == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+        <button class="small secondary">Save</button>
+      </form>
+    {% else %}<p class="muted">None yet.</p>{% endfor %}
   </section>
 </div>
 <section class="card">

@@ -47,6 +47,7 @@ class Config:
     brand_name: str = "BINTARA"
     brand_tagline: str = "We get IT Done. Delivered"
     brand_contact: str = ""
+    brand_legal: str = "Bintara Solutions Sdn Bhd"
 
     @property
     def db_path(self):
@@ -98,6 +99,7 @@ def load_config(**overrides):
         brand_name=os.environ.get("RUNNER_BRAND_NAME", "BINTARA"),
         brand_tagline=os.environ.get("RUNNER_BRAND_TAGLINE", "We get IT Done. Delivered"),
         brand_contact=os.environ.get("RUNNER_BRAND_CONTACT", ""),
+        brand_legal=os.environ.get("RUNNER_BRAND_LEGAL", "Bintara Solutions Sdn Bhd"),
         tool_paths={
             "nmap": os.environ.get("NMAP_PATH", "nmap"),
             "dnstwist": os.environ.get("DNSTWIST_PATH", "dnstwist"),

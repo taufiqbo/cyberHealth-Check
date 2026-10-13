@@ -150,6 +150,13 @@ code.wrap { white-space: pre-wrap; word-break: break-word; font-size: 12px; }
 .history a { display: block; min-width: 160px; padding: 14px 16px; border: 1px solid #e0d3f7; background: var(--lav-soft); border-radius: 12px; text-decoration: none; color: var(--text); }
 .history a strong { display: block; font-size: 24px; color: var(--primary); }
 
+.tier-pill { display: inline-block; padding: 4px 12px; border-radius: 10px; font-size: 13px; font-weight: 600; border: 1px solid; }
+.tier-complimentary { background: #ecfbfa; color: #0f6f6b; border-color: #bfeeea; }
+.tier-comprehensive { background: var(--lav); color: var(--primary-strong); border-color: #d9c8f7; }
+.tier-row { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.tier-row select { margin: 0; width: auto; }
+.downloads { margin-top: 12px; }
+
 /* Sign-in page ----------------------------------------------------------- */
 .auth { min-height: 100vh; display: grid; grid-template-columns: 1.1fr 1fr; background: linear-gradient(120deg, #ffffff 0%, #f6efff 55%, #eaf9f9 100%); }
 .auth-hero { padding: 9vh 7vw; display: flex; flex-direction: column; justify-content: center; }

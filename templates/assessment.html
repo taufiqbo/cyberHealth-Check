@@ -230,8 +230,31 @@
   {% endfor %}
 </section>
 
+<section class="card" id="summary">
+  <div class="section-head">
+    <h2>7. Report summary</h2>
+    <span class="tier-pill tier-{{ client.tier }}">{{ tiers[client.tier] }}</span>
+  </div>
+  <p class="muted">This paragraph opens the client's PDF report and slides. Leave it empty to use the automatic summary.</p>
+  {% if not locked and ('reviewer' in roles or 'analyst' in roles) %}
+  <form method="post" action="{{ url_for('report_summary', aid=a.id) }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>Executive summary (optional)
+      <textarea name="summary_text" rows="4" placeholder="For example: The review found a well-maintained asset inventory and working email protection, but website hardening and an exposed database need prompt attention.">{{ a.summary_text or '' }}</textarea></label>
+    <button class="secondary">Save summary</button>
+  </form>
+  {% elif a.summary_text %}<p>{{ a.summary_text }}</p>{% endif %}
+  <div class="actions downloads">
+    {% for key, label in tiers.items() %}
+      <a class="button secondary small" href="{{ url_for('report_file', aid=a.id, fmt='pdf', tier=key) }}">{{ icon('report') }} {{ label }} PDF</a>
+      <a class="button secondary small" href="{{ url_for('report_file', aid=a.id, fmt='pptx', tier=key) }}">{{ icon('report') }} {{ label }} slides</a>
+    {% endfor %}
+  </div>
+  {% if not locked %}<p class="muted">Downloads before sign-off are marked DRAFT.</p>{% endif %}
+</section>
+
 <section class="card">
-  <h2>7. Sign-off</h2>
+  <h2>8. Sign-off</h2>
   {% if locked %}
     <p class="ok">Signed off {{ a.signed_off_at[:16].replace('T', ' ') }} by {{ people[a.signed_off_by].name }}{% if a.self_signoff %} (self sign-off: only reviewer on the team; recorded in the audit trail){% endif %}.
       {% if a.signoff_note %}Note: {{ a.signoff_note }}{% endif %}</p>

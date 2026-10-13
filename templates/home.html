@@ -8,6 +8,7 @@
     <p class="eyebrow">{{ 'Organisation workspace' if is_client else 'Control centre' }}</p>
     <h1>{{ 'Dashboard' if is_client else 'Assessments' }}</h1>
     <p class="lead">{{ 'Security observations for your domains.' if is_client else 'Every External CyberHealth Check, from ownership proof to sign-off.' }}</p>
+    {% if my_client %}<p><span class="tier-pill tier-{{ my_client.tier }}">{{ tiers[my_client.tier] }}</span> {{ my_client.name }}</p>{% endif %}
   </div>
   {% if 'analyst' in roles %}<a class="button" href="{{ url_for('new_assessment') }}">{{ icon('plus') }} New assessment</a>{% endif %}
 </div>

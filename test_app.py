@@ -531,3 +531,63 @@ def test_saving_known_hosts_reruns_discovery(demo):
     assert row["status"] == "pass"
     post(c, "/assessments/2/known-hosts", known_hosts="evil.example")
     assert "Not part of" in c.get("/assessments/2").get_data(as_text=True)
+
+
+# Tiers and downloadable reports ---------------------------------------------------
+def _download(c, url):
+    resp = c.get(url)
+    return resp.status_code, resp.data, resp.headers.get("Content-Disposition", "")
+
+
+def test_admin_sets_client_tier(demo):
+    c = demo.test_client()
+    login(c, "admin@demo.example", "demo-admin")
+    post(c, "/admin/people", action="set_tier", client_id="1", tier="comprehensive")
+    assert demo.extensions["runner"].db.one("SELECT tier FROM clients WHERE id = 1")["tier"] == "comprehensive"
+    assert demo.extensions["runner"].db.one("SELECT * FROM audit WHERE action = 'client.tier_changed'")
+    post(c, "/admin/people", action="add_client", name="New Co", tier="comprehensive")
+    assert demo.extensions["runner"].db.one("SELECT tier FROM clients WHERE name = 'New Co'")["tier"] == "comprehensive"
+
+
+def test_client_downloads_only_own_tier_after_signoff(demo):
+    c = demo.test_client()
+    login(c, f"client@{DOMAIN}", "demo-client")
+    status, body, disposition = _download(c, "/assessments/1/report.pdf?tier=comprehensive")
+    assert status == 200 and body.startswith(b"%PDF") and "Complimentary" in disposition  # tier forced to client's own
+    status, body, disposition = _download(c, "/assessments/1/report.pptx")
+    assert status == 200 and body[:2] == b"PK" and disposition.endswith('.pptx"')
+    assert c.get("/assessments/2/report.pdf").status_code == 404  # not signed off yet
+
+
+def test_staff_download_either_tier_with_draft_marking(demo):
+    import zipfile
+    from io import BytesIO
+    c = demo.test_client()
+    login(c, "reviewer@demo.example", "demo-reviewer")
+    for tier in ("complimentary", "comprehensive"):
+        status, body, disposition = _download(c, f"/assessments/2/report.pdf?tier={tier}")
+        assert status == 200 and body.startswith(b"%PDF") and tier.title() in disposition
+        status, body, _ = _download(c, f"/assessments/2/report.pptx?tier={tier}")
+        slides = zipfile.ZipFile(BytesIO(body)).namelist()
+        assert sum(n.startswith("ppt/slides/slide") for n in slides) >= (8 if tier == "comprehensive" else 5)
+    assert c.get("/assessments/2/report.pdf?tier=gold").status_code == 400
+    assert demo.extensions["runner"].db.one("SELECT * FROM audit WHERE action = 'report.downloaded'")
+
+
+def test_report_summary_is_used(demo):
+    from runner import reports
+    c = demo.test_client()
+    login(c, "reviewer@demo.example", "demo-reviewer")
+    post(c, "/assessments/2/summary", summary_text="Hand-written summary for the board.")
+    service = demo.extensions["runner"]
+    data = reports.build(service, 2, "comprehensive")
+    assert data["summary"] == "Hand-written summary for the board." and data["draft"]
+    assert all(f["id"].startswith("F-") for f in data["findings"])
+    severities = [reports.SEV_ORDER[f["severity"]] for f in data["findings"]]
+    assert severities == sorted(severities)
+
+
+def test_every_control_has_plain_wording():
+    from runner.reports.plain import PLAIN
+    assert set(PLAIN) == {c.id for c in CONTROLS}
+    assert all(set(v) == {"finding", "impact", "action", "good"} for v in PLAIN.values())

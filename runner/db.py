@@ -10,7 +10,8 @@ CREATE TABLE IF NOT EXISTS clients (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
     contact_email TEXT,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    tier TEXT NOT NULL DEFAULT 'complimentary'
 );
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY,
@@ -59,7 +60,8 @@ CREATE TABLE IF NOT EXISTS assessments (
     signoff_note TEXT,
     self_signoff INTEGER NOT NULL DEFAULT 0,
     score_json TEXT,
-    known_hosts TEXT
+    known_hosts TEXT,
+    summary_text TEXT
 );
 CREATE TABLE IF NOT EXISTS module_runs (
     id INTEGER PRIMARY KEY,
@@ -138,10 +140,12 @@ class Database:
         with self.connect() as conn:
             conn.executescript(SCHEMA)
             # Databases made by older versions lack newer columns.
-            for table, column in (("module_runs", "progress"), ("assessments", "known_hosts")):
+            for table, column, kind in (("module_runs", "progress", "TEXT"), ("assessments", "known_hosts", "TEXT"),
+                                        ("assessments", "summary_text", "TEXT"),
+                                        ("clients", "tier", "TEXT NOT NULL DEFAULT 'complimentary'")):
                 columns = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
                 if column not in columns:
-                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
 
     @contextmanager
     def connect(self):

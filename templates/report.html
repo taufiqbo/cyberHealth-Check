@@ -8,13 +8,20 @@
   <div>
     <p class="eyebrow">{{ BRAND }} CyberHealth report</p>
     <h1>External CyberHealth Check: {{ a.target }}</h1>
-    <p class="muted">{{ client.name }}{% if a.signed_off_at %} · signed off {{ a.signed_off_at[:10] }} by {{ signer.name }}{% endif %} · CyberHealth Score v{{ score.version }}</p>
+    <p class="muted"><span class="tier-pill tier-{{ client.tier }}">{{ tiers[client.tier] }}</span> {{ client.name }}{% if a.signed_off_at %} · signed off {{ a.signed_off_at[:10] }} by {{ signer.name }}{% endif %} · CyberHealth Score v{{ score.version }}</p>
   </div>
   <div class="actions no-print">
-    <a class="button secondary" href="{{ url_for('report_json', aid=a.id) }}">{{ icon('report') }} Download as JSON</a>
+    {% if 'client' in roles %}
+      <a class="button" href="{{ url_for('report_file', aid=a.id, fmt='pdf') }}">{{ icon('report') }} Download PDF report</a>
+      <a class="button secondary" href="{{ url_for('report_file', aid=a.id, fmt='pptx') }}">{{ icon('report') }} Download summary slides</a>
+    {% else %}
+      <a class="button" href="{{ url_for('report_file', aid=a.id, fmt='pdf') }}">{{ icon('report') }} {{ tiers[client.tier] }} PDF</a>
+      <a class="button secondary" href="{{ url_for('report_file', aid=a.id, fmt='pptx') }}">{{ icon('report') }} Slides</a>
+    {% endif %}
+    <a class="button secondary" href="{{ url_for('report_json', aid=a.id) }}">JSON</a>
   </div>
 </div>
-<p class="lead">An outside-in check of what the internet can see. It is not a penetration test: nothing was exploited and no login was attempted. Use your browser's Print (Ctrl+P) to save this report as PDF.</p>
+<p class="lead">An outside-in check of what the internet can see. It is not a penetration test: nothing was exploited and no login was attempted.</p>
 
 <div class="grid2">
   {{ score_panel(score) }}

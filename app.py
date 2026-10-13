@@ -16,6 +16,7 @@ from runner.config import load_config
 from runner.controls import BY_ID, MODULES, REVIEWER_CHOICES, STATUS_LABELS
 from runner.db import Database, loads
 from runner.pipeline import GateClosed, Service, Worker, gate
+from runner.reports import TIERS
 
 UPLOAD_TYPES = {".pdf", ".png", ".jpg", ".jpeg", ".txt", ".eml", ".msg", ".docx", ".xml"}
 STATUS_TEXT = {"awaiting_ownership": "Waiting for ownership proof", "running": "Checks running",
@@ -205,7 +206,8 @@ def register(app, service):
             a["flagged"] = db.one("SELECT COUNT(*) AS n FROM results WHERE assessment_id = ? AND needs_review = 1",
                                   (a["id"],))["n"]
             a["score"] = loads(a["score_json"]) if a["signed_off_at"] else None
-        return render_template("home.html", assessments=rows)
+        my_client = None if is_staff() else db.one("SELECT * FROM clients WHERE id = ?", (g.user["client_id"],))
+        return render_template("home.html", assessments=rows, my_client=my_client, tiers=TIERS)
 
     # Assessments --------------------------------------------------------------
     @app.route("/assessments/new", methods=["GET", "POST"])
@@ -248,7 +250,7 @@ def register(app, service):
             live_hosts=[h["name"] for h in disc.get("hosts", []) if h.get("resolves")],
             can_signoff=allowed, self_signoff=self_signoff, why_not=why_not, people=people,
             flagged=[r for r in results if r["needs_review"] and not r["reviewed_at"]],
-            choices=REVIEWER_CHOICES)
+            choices=REVIEWER_CHOICES, tiers=TIERS)
 
     @app.route("/assessments/<int:aid>/ownership/check", methods=["POST"])
     @role_required("analyst")
@@ -400,7 +402,54 @@ def register(app, service):
         if results is None:
             return render_template("report_pending.html", a=a, client=client)
         by_module = {m: [r for r in results if r["module"] == m] for m in MODULES}
-        return render_template("report.html", a=a, client=client, by_module=by_module, score=score, signer=signer)
+        return render_template("report.html", a=a, client=client, by_module=by_module, score=score, signer=signer,
+                               tiers=TIERS)
+
+    @app.route("/assessments/<int:aid>/summary", methods=["POST"])
+    @role_required("analyst", "reviewer")
+    def report_summary(aid):
+        a = load_assessment(aid)
+        if a["signed_off_at"]:
+            flash("This assessment is signed off and locked.", "error")
+        else:
+            text = request.form.get("summary_text", "").strip()[:4000]
+            db.update("assessments", aid, summary_text=text or None)
+            audit.record(db, "report.summary_edited", g.user, aid, length=len(text))
+            flash("Report summary saved." if text else "Report summary cleared; the automatic summary will be used.", "ok")
+        return redirect(url_for("assessment", aid=aid) + "#summary")
+
+    def download_tier(a):
+        """Clients get their own tier, and only after sign-off. Staff may pick either tier, any time."""
+        client = db.one("SELECT * FROM clients WHERE id = ?", (a["client_id"],))
+        if not is_staff():
+            if not a["signed_off_at"]:
+                abort(404)
+            return client["tier"]
+        tier = request.args.get("tier") or client["tier"]
+        if tier not in TIERS:
+            abort(400)
+        return tier
+
+    @app.route("/assessments/<int:aid>/report.<fmt>")
+    @login_required
+    def report_file(aid, fmt):
+        if fmt not in ("pdf", "pptx"):
+            abort(404)
+        a = load_assessment(aid)
+        tier = download_tier(a)
+        from runner import reports
+        data = reports.build(service, aid, tier)
+        if fmt == "pdf":
+            from runner.reports import pdf
+            body, mime = pdf.render(data), "application/pdf"
+        else:
+            from runner.reports import slides
+            body = slides.render(data)
+            mime = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        audit.record(db, "report.downloaded", g.user, aid, format=fmt, tier=tier, draft=data["draft"])
+        resp = app.response_class(body, mimetype=mime)
+        resp.headers["Content-Disposition"] = f'attachment; filename="{reports.filename(data, fmt)}"'
+        return resp
 
     @app.route("/assessments/<int:aid>/report.json")
     @login_required
@@ -427,9 +476,12 @@ def register(app, service):
                     name = request.form.get("name", "").strip()
                     if not name:
                         raise ValueError("Enter the client's name.")
-                    cid = db.run("INSERT INTO clients (name, contact_email, created_at) VALUES (?, ?, datetime('now'))",
-                                 (name, request.form.get("contact_email", "").strip().lower() or None))
-                    audit.record(db, "client.created", g.user, None, client_id=cid, name=name)
+                    tier = request.form.get("tier", "complimentary")
+                    if tier not in TIERS:
+                        raise ValueError("Choose a tier.")
+                    cid = db.run("INSERT INTO clients (name, contact_email, created_at, tier) VALUES (?, ?, datetime('now'), ?)",
+                                 (name, request.form.get("contact_email", "").strip().lower() or None, tier))
+                    audit.record(db, "client.created", g.user, None, client_id=cid, name=name, tier=tier)
                     flash(f"Client {name} added.", "ok")
                 elif action == "add_user":
                     accounts.create_user(db, request.form.get("email"), request.form.get("name", ""),
@@ -444,6 +496,16 @@ def register(app, service):
                     target = service.user(uid)
                     audit.record(db, f"user.{action}d", g.user, None, user=target["email"])
                     flash(f"{target['email']} {action}d.", "ok")
+                elif action == "set_tier":
+                    cid = int(request.form.get("client_id"))
+                    tier = request.form.get("tier")
+                    client = db.one("SELECT * FROM clients WHERE id = ?", (cid,))
+                    if not client or tier not in TIERS:
+                        raise ValueError("Choose a client and a tier.")
+                    db.update("clients", cid, tier=tier)
+                    audit.record(db, "client.tier_changed", g.user, None, client_id=cid, name=client["name"],
+                                 before=client["tier"], after=tier)
+                    flash(f"{client['name']} is now on the {TIERS[tier]} tier.", "ok")
                 elif action == "reset_password":
                     uid = int(request.form.get("user_id"))
                     accounts.set_password(db, uid, request.form.get("password"), g.user)
@@ -454,7 +516,7 @@ def register(app, service):
         users = db.all("SELECT u.*, c.name AS client_name FROM users u LEFT JOIN clients c ON c.id = u.client_id"
                        " ORDER BY u.active DESC, u.email")
         clients = db.all("SELECT * FROM clients ORDER BY name")
-        return render_template("people.html", users=users, clients=clients, all_roles=accounts.ALL_ROLES)
+        return render_template("people.html", users=users, clients=clients, all_roles=accounts.ALL_ROLES, tiers=TIERS)
 
     @app.route("/admin/audit")
     @role_required("admin")
