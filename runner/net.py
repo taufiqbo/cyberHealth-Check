@@ -1,10 +1,12 @@
 """Everything that touches the network goes through a Net object, so demo mode and
 the tests can swap in fixtures (see demo_net.py)."""
 import ipaddress
+import json
 import shutil
 import socket
 import ssl
 import subprocess
+import time
 from dataclasses import dataclass, field
 
 import dns.exception
@@ -199,13 +201,24 @@ class LiveNet:
         resp.close()
         return HttpResponse(resp.status_code, header_list, body, url, verified)
 
-    def get_json(self, url, headers=None, timeout=30):
+    def get_json(self, url, headers=None, timeout=30, max_bytes=50_000_000):
+        """timeout is the total time allowed, including a slow trickling download."""
+        deadline = time.monotonic() + timeout
         try:
-            resp = requests.get(url, headers={"User-Agent": USER_AGENT, **(headers or {})}, timeout=timeout)
-            resp.raise_for_status()
-            return resp.json()
+            with requests.get(url, headers={"User-Agent": USER_AGENT, **(headers or {})},
+                              timeout=min(timeout, 30), stream=True) as resp:
+                resp.raise_for_status()
+                chunks, size = [], 0
+                for chunk in resp.iter_content(65536):
+                    chunks.append(chunk)
+                    size += len(chunk)
+                    if time.monotonic() > deadline:
+                        raise NetError(f"GET {url}: no complete answer within {timeout}s")
+                    if size > max_bytes:
+                        raise NetError(f"GET {url}: answer larger than {max_bytes} bytes")
+                return json.loads(b"".join(chunks))
         except (requests.RequestException, ValueError) as exc:
-            raise NetError(f"GET {url}: {exc}") from exc
+            raise NetError(f"GET {url}: {exc.__class__.__name__}: {exc}") from exc
 
     # TLS -------------------------------------------------------------------
     def tls_handshake(self, host, port=443, timeout=8):
@@ -283,7 +296,7 @@ class LiveNet:
         """Host names seen in certificate transparency logs. Returns (names, source)."""
         errors = []
         try:
-            data = self.get_json(f"https://crt.sh/?q=%25.{domain}&output=json", timeout=60)
+            data = self.get_json(f"https://crt.sh/?q=%25.{domain}&output=json", timeout=90)
             names = set()
             for entry in data:
                 for n in str(entry.get("name_value", "")).splitlines():
@@ -294,7 +307,7 @@ class LiveNet:
         try:
             data = self.get_json(
                 f"https://api.certspotter.com/v1/issuances?domain={domain}"
-                "&include_subdomains=true&expand=dns_names", timeout=60)
+                "&include_subdomains=true&expand=dns_names", timeout=90)
             names = {n.lower() for entry in data for n in entry.get("dns_names", [])}
             return sorted(names), "certspotter"
         except NetError as exc:

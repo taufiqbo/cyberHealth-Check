@@ -430,3 +430,26 @@ def test_eol_judgement():
     assert eol.judge("postgresql", "14.9", data, today=date(2026, 8, 1))["status"] == "soon"
     assert eol.judge("nginx", "9.9", data)["status"] == "unknown"
     assert eol.find_cycle(["1.1", "1.1.1"], "1.1.1") == "1.1.1"
+
+
+def test_hanging_module_times_out_and_queue_moves_on(live, monkeypatch):
+    import time as _time
+    from runner import pipeline
+    service = live.extensions["runner"]
+    monkeypatch.setitem(pipeline.MODULE_TIMEOUT_MINUTES, "discovery", 0.01)  # 0.6 seconds
+
+    def stuck(domain):
+        _time.sleep(5)
+        raise AssertionError("should have been abandoned")
+    monkeypatch.setattr(service.net, "ct_names", stuck)
+    cid, ids = add_people(service, ("an@x.example", ["analyst"]))
+    analyst = service.user(ids["an@x.example"])
+    aid = service.create_assessment(analyst, cid, DOMAIN)
+    service.check_ownership(aid)
+    service.work_until_idle()
+    runs = {r["module"]: r for r in service.runs(aid)}
+    assert runs["discovery"]["status"] == "error" and "no result after" in runs["discovery"]["error"]
+    assert "certificate transparency" in runs["discovery"]["error"]
+    assert runs["tls"]["status"] == "done" and service.assessment(aid)["status"] == "in_review"
+    statuses = {r["control_id"]: r["status"] for r in service.results(aid)}
+    assert statuses["EAS-01"] == "inconclusive"

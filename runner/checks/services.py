@@ -53,6 +53,7 @@ def run(ctx):
     if not nmap:
         return all_status("services", "inconclusive", "Nmap is not installed on this server.")
     try:
+        ctx.progress(f"Nmap pass 1 (top 1000 ports) on {len(scope)} address(es)")
         rc, out1, err = ctx.net.run([nmap, "-Pn", "-sT", "--top-ports", "1000", "-T3", "--open", "-oX", "-", *scope])
         if rc != 0:
             raise NetError(f"nmap pass 1 exit {rc}: {err.strip()[:300]}")
@@ -60,6 +61,7 @@ def run(ctx):
         ports = sorted({p for host in first.values() for p in host})
         second = {}
         if ports:
+            ctx.progress(f"Nmap pass 2 (confirm and read versions) on {len(ports)} port(s)")
             rc, out2, err = ctx.net.run([nmap, "-Pn", "-sT", "-sV", "--version-light", "-T3",
                                          "-p", ",".join(map(str, ports)), "-oX", "-", *scope])
             if rc != 0:

@@ -10,6 +10,7 @@ def _lookalikes(ctx):
     tool = ctx.net.which("dnstwist")
     if not tool:
         raise NetError("dnstwist is not installed")
+    ctx.progress("running dnstwist (lookalike domains; can take 10+ minutes)")
     rc, out, err = ctx.net.run([tool, "--registered", "--format", "json", ctx.target], timeout=1800)
     if rc != 0 and not out.strip():
         raise NetError(f"dnstwist failed: {err.strip()[:300]}")
@@ -31,6 +32,7 @@ def _lookalikes(ctx):
 
 
 def _rdap_result(ctx):
+    ctx.progress("RDAP registration lookup")
     try:
         data = ctx.net.rdap(ctx.target)
     except NetError as exc:

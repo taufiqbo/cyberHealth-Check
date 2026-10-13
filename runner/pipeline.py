@@ -16,6 +16,17 @@ AUTO_MODULES = ["discovery", "tls", "email", "web", "brand", "lifecycle"]
 # Lifecycle reads what the others collected, so it always goes last.
 ORDER = ["discovery", "tls", "email", "web", "brand", "services", "vulns", "lifecycle"]
 DNS_MODULES = {"discovery", "tls", "email", "web", "brand"}
+# Longest a module may run before the worker gives up on it and moves to the next job (minutes).
+MODULE_TIMEOUT_MINUTES = {"discovery": 20, "tls": 15, "email": 5, "web": 10, "brand": 40,
+                          "services": 90, "lifecycle": 5, "vulns": 30}
+
+
+class ModuleTimeout(Exception):
+    pass
+
+
+def log(message):
+    print(f"{time.strftime('%H:%M:%S')} {message}", flush=True)
 
 
 class GateClosed(Exception):
@@ -85,7 +96,8 @@ class Service:
         runs = self.runs(assessment["id"])
         states = {}
         for module, label in MODULES.items():
-            latest = next((r for r in runs if r["module"] == module), None)
+            mine = [r for r in runs if r["module"] == module]
+            latest = next((r for r in mine if r["status"] == "running"), mine[0] if mine else None)
             states[module] = {"label": label, "latest": latest, "gate": gate(assessment, module)}
         return states
 
@@ -262,7 +274,18 @@ class Service:
             return
         ctx = Context(assessment=a, net=self.net, config=self.config,
                       prior=self.prior_evidence(a["id"]), report_path=a.get("report_file") or "")
+        state = {"abandoned": False}
+
+        def progress(message):
+            if state["abandoned"]:
+                return
+            log(f"[{a['target']} #{run['id']} {run['module']}] {message}")
+            self.db.update("module_runs", run["id"], progress=message[:300])
+
+        ctx.on_progress = progress
         started = now()
+        clock = time.monotonic()
+        log(f"[{a['target']} #{run['id']} {run['module']}] started")
         try:
             if run["module"] in DNS_MODULES and a["target_type"] == "domain" and self.net.nxdomain(a["target"]) is not False:
                 # Without this, a broken resolver would read as "no SPF", "no DMARC" and so on.
@@ -272,9 +295,9 @@ class Service:
                 results = [{"control_id": c.id, "status": "inconclusive", "summary": message, "details": {},
                             "review": True} for c in for_module(run["module"])]
             else:
-                results = get_runner(run["module"])(ctx)
+                results = self._run_with_time_limit(run, ctx, state)
             error = None
-        except Exception as exc:  # a module bug must not stop the worker
+        except Exception as exc:  # a module bug or a hang must not stop the worker
             error = f"{exc.__class__.__name__}: {exc}"
             ctx.evidence["traceback"] = traceback.format_exc()
             results = [{"control_id": c.id, "status": "inconclusive", "summary": f"Module failed: {error}",
@@ -284,10 +307,17 @@ class Service:
             if c.id not in returned:
                 results.append({"control_id": c.id, "status": "inconclusive", "summary": "Module returned no result.",
                                 "details": {}, "review": True})
-        evidence_path, digest = self._write_evidence(a, run, started, ctx.evidence, results)
+        try:
+            evidence = dict(ctx.evidence)  # an abandoned module thread may still be writing to it
+        except RuntimeError:
+            evidence = {}
+        evidence_path, digest = self._write_evidence(a, run, started, evidence, results)
         self._store_results(a["id"], run, results)
         self.db.update("module_runs", run["id"], status="error" if error else "done", finished_at=now(),
-                       evidence_path=str(evidence_path), evidence_sha256=digest, error=error)
+                       evidence_path=str(evidence_path), evidence_sha256=digest, error=error,
+                       progress=None)
+        log(f"[{a['target']} #{run['id']} {run['module']}] {'FAILED: ' + error if error else 'done'}"
+            f" after {round(time.monotonic() - clock)}s")
         audit.record(self.db, "module.finished", None, a["id"], module=run["module"],
                      status="error" if error else "done", evidence_sha256=digest)
         if error:
@@ -299,6 +329,32 @@ class Service:
         if run["module"] in ("web", "services") and gate(a, "lifecycle") is None:
             self.enqueue(a["id"], "lifecycle", None)
         self._after_run(a["id"])
+
+    def _run_with_time_limit(self, run, ctx, state):
+        """Runs the module in its own thread. If it overruns, the worker stops waiting and moves on;
+        the stuck thread is left to finish (or not) on its own."""
+        box = {}
+
+        def target():
+            try:
+                box["results"] = get_runner(run["module"])(ctx)
+            except Exception as exc:
+                box["error"] = exc
+                box["traceback"] = traceback.format_exc()
+
+        minutes = MODULE_TIMEOUT_MINUTES.get(run["module"], 15)
+        thread = threading.Thread(target=target, name=f"module-{run['module']}-{run['id']}", daemon=True)
+        thread.start()
+        thread.join(minutes * 60)
+        if thread.is_alive():
+            state["abandoned"] = True
+            last = self.db.one("SELECT progress FROM module_runs WHERE id = ?", (run["id"],))["progress"]
+            raise ModuleTimeout(f"no result after {minutes} minutes (last step: {last or 'none'}). "
+                                "A network service did not answer; re-run later.")
+        if "error" in box:
+            ctx.evidence["traceback"] = box["traceback"]
+            raise box["error"]
+        return box["results"]
 
     def _write_evidence(self, a, run, started, data, results):
         folder = Path(self.config.evidence_dir) / str(a["id"])

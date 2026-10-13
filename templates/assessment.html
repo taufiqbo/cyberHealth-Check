@@ -58,6 +58,7 @@
         <td>{{ s.label }}</td>
         <td>{% if s.latest %}<span class="run r-{{ s.latest.status }}">{{ s.latest.status }}</span>
             {{ (s.latest.finished_at or s.latest.queued_at)[:16].replace('T', ' ') }}
+            {% if s.latest.status == 'running' and s.latest.progress %}<br><span class="muted">Now: {{ s.latest.progress }}</span>{% endif %}
             {% if s.latest.error %}<br><span class="muted">{{ s.latest.error }}</span>{% endif %}
             {% if s.latest.evidence_path %}· <a href="{{ url_for('evidence', aid=a.id, run_id=s.latest.id) }}">evidence</a>{% endif %}
           {% else %}–{% endif %}</td>

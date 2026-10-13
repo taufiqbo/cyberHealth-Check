@@ -106,8 +106,10 @@ def run(ctx):
         return all_status("vulns", "inconclusive", f"The uploaded report could not be read: {exc}")
     scope = set(ctx.assessment.get("headsup_scope_list", []))
     outside = sorted({f["host"] for f in findings if scope and f["host"] not in scope})
+    ctx.progress("loading the CISA KEV catalogue")
     kev, kev_version = _load_kev(ctx)
     all_cves = sorted({c for f in findings for c in f["cves"]})
+    ctx.progress("looking up CVE dates in NVD (slow without an API key)")
     published = _nvd_published(ctx, [c for f in findings if f["severity"] >= 4.0 for c in f["cves"]])
     ctx.evidence.update({"findings": findings, "kev_catalog": kev_version, "nvd_published": published,
                          "hosts_outside_scope": outside})

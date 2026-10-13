@@ -64,6 +64,7 @@ def run(ctx):
 
     names = {domain, f"www.{domain}"}
     sources = {}
+    ctx.progress("asking certificate transparency logs (crt.sh, then CertSpotter)")
     try:
         ct, source = net.ct_names(domain)
         found = {n for n in (_clean(x, domain) for x in ct) if n}
@@ -74,6 +75,7 @@ def run(ctx):
 
     amass = net.which("amass")
     if amass:
+        ctx.progress("running Amass (passive, up to 10 minutes)")
         try:
             rc, out, err = net.run([amass, "enum", "-passive", "-d", domain, "-timeout", "10"], timeout=900)
             found = {n for n in (_clean(line.split()[0], domain) for line in out.splitlines() if line.strip()) if n}
@@ -86,6 +88,7 @@ def run(ctx):
 
     names |= {f"{n}.{domain}" for n in COMMON_NAMES}
     ordered = sorted(names, key=lambda n: (n != domain, n != f"www.{domain}", n))[:MAX_NAMES]
+    ctx.progress(f"resolving {len(ordered)} host names in DNS")
     with ThreadPoolExecutor(max_workers=16) as pool:
         hosts = list(pool.map(lambda n: _lookup(net, n), ordered))
     # Names guessed from the common list only count if they exist.
@@ -122,6 +125,7 @@ def run(ctx):
                               f"only common names were checked ({len(resolving)} resolve).", inventory))
 
     # EAS-02
+    ctx.progress("checking CNAME records for dangling targets")
     dangling = []
     for h in hosts:
         if not h["cname"]:
@@ -153,11 +157,15 @@ def run(ctx):
 
     # EAS-04 and EAS-05
     try:
+        ctx.progress("checking DNSSEC and name servers")
         apex, ns = _zone_apex(net, domain)
         ds = net.resolve(apex, "DS")
         results.append(result("EAS-04", "pass" if ds else "fail",
                               f"DNSSEC {'is' if ds else 'is not'} enabled for {apex}.", {"zone": apex, "ds": ds}))
-        axfr = {n: net.axfr_allowed(apex, n) for n in ns[:4]}
+        axfr = {}
+        for n in ns[:4]:
+            ctx.progress(f"testing zone transfer on {n}")
+            axfr[n] = net.axfr_allowed(apex, n)
         open_ns = [n for n, v in axfr.items() if v]
         detail = {"zone": apex, "nameservers": ns, "zone_transfer": axfr}
         if open_ns:

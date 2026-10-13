@@ -67,7 +67,10 @@ def run(ctx):
     net = ctx.net
     primary = ctx.primary_host()
     hosts = ctx.web_hosts()
-    infos = {h: net.tls_handshake(h) for h in hosts}
+    infos = {}
+    for h in hosts:
+        ctx.progress(f"TLS handshake with {h}")
+        infos[h] = net.tls_handshake(h)
     handshakes = {h: {"ok": i.ok, "error": i.error, "verified": i.verified, "verify_error": i.verify_error,
                       "hostname_ok": i.hostname_ok, "version": i.version, "cipher": i.cipher, "cert": i.cert}
                   for h, i in infos.items()}
@@ -118,12 +121,14 @@ def run(ctx):
 
     probe_hosts = [primary] if primary in up else []
     probe_hosts += [h for h in up if h != primary][:MAX_PROBE_HOSTS - len(probe_hosts)]
+    ctx.progress(f"probing old protocols and weak ciphers on {len(probe_hosts)} host(s)")
     found, untestable, per_host = _probe(net, probe_hosts, ["TLSv1.0", "TLSv1.1"])
     results.append(_probe_result("TLS-05", "old protocols", found, untestable, per_host))
     found, untestable, per_host = _probe(net, probe_hosts, ["RC4", "3DES", "NULL", "anonymous"])
     results.append(_probe_result("TLS-06", "weak ciphers", found, untestable, per_host))
 
     host = primary if primary in up else next(iter(up))
+    ctx.progress(f"checking HTTP redirect and HSTS on {host}")
     redirect_ok, hsts_ok, detail = _redirect_and_hsts(net, host)
     ctx.evidence["redirect_hsts"] = detail
     if redirect_ok and hsts_ok:

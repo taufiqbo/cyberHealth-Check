@@ -12,6 +12,11 @@ class Context:
     prior: dict = field(default_factory=dict)     # module -> evidence of its latest good run
     evidence: dict = field(default_factory=dict)  # this run's raw observations
     report_path: str = ""
+    on_progress: object = None  # callable(message), set by the worker
+
+    def progress(self, message):
+        if self.on_progress:
+            self.on_progress(message)
 
     @property
     def target(self):

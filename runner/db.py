@@ -71,7 +71,8 @@ CREATE TABLE IF NOT EXISTS module_runs (
     finished_at TEXT,
     evidence_path TEXT,
     evidence_sha256 TEXT,
-    error TEXT
+    error TEXT,
+    progress TEXT
 );
 CREATE TABLE IF NOT EXISTS results (
     id INTEGER PRIMARY KEY,
@@ -135,6 +136,10 @@ class Database:
         self.path = str(path)
         with self.connect() as conn:
             conn.executescript(SCHEMA)
+            # Databases made by older versions lack newer columns.
+            columns = {r["name"] for r in conn.execute("PRAGMA table_info(module_runs)")}
+            if "progress" not in columns:
+                conn.execute("ALTER TABLE module_runs ADD COLUMN progress TEXT")
 
     @contextmanager
     def connect(self):

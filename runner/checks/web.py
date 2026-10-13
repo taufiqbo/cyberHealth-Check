@@ -116,6 +116,7 @@ def _security_txt(ctx):
 
 def run(ctx):
     host = ctx.primary_host()
+    ctx.progress(f"fetching the home page of {host}")
     try:
         chain, notes = fetch_home(ctx, host)
     except NetError as exc:
@@ -180,5 +181,6 @@ def run(ctx):
     results.append(result("WEB-08", "pass" if pp else "fail",
                           "Permissions-Policy is set." if pp else "No Permissions-Policy header."))
 
+    ctx.progress("looking for security.txt")
     results.append(_security_txt(ctx))
     return results
