@@ -5,7 +5,7 @@
 <p class="eyebrow">{{ BRAND }} control center</p>
 <h1>Plan settings</h1>
 <p class="lead">Decide what each plan includes. Organizations get their plan on the Organizations page.</p>
-<p class="notice">Saved settings are kept now. Domain limits, check areas and automatic re-assessment start being applied in the next step of the build.</p>
+<p class="notice">Automatic publishing works now. Domain limits, check areas and the automatic re-assessment schedule are saved and start being applied in the next step of the build.</p>
 
 <div class="grid2">
 {% for key, p in plans.items() %}
@@ -36,6 +36,8 @@
         <select name="reassess">{% for k, v in frequencies.items() %}<option value="{{ k }}" {% if p.reassess == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
       </label>
       <p class="muted small-text">Each domain on this plan is checked again automatically at this interval. Results still go to a reviewer before the client sees them.</p>
+      <label class="check"><input type="checkbox" name="auto_publish" value="1" {% if p.auto_publish %}checked{% endif %}> Publish automatically when nothing changed</label>
+      <p class="muted small-text">If a re-assessment of a domain gives exactly the same results as its last signed-off assessment, it is signed off and sent to the client without a reviewer. Earlier reviewer decisions are carried over. Any change goes to a reviewer as usual.</p>
       <label class="check"><input type="checkbox" name="active" value="1" {% if p.active %}checked{% endif %}> Active (can be given to organizations)</label>
       {% if key != default %}<label class="check"><input type="checkbox" name="make_default" value="1"> Default for new organizations</label>{% endif %}
       <p><button>{{ icon('layers') }} Save {{ p.label }}</button></p>

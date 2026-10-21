@@ -8,7 +8,7 @@
   <div>
     <p class="eyebrow">{{ BRAND }} CyberHealth report</p>
     <h1>External CyberHealth Check: {{ a.target }}</h1>
-    <p class="muted"><span class="tier-pill tier-{{ client.tier }}">{{ tiers[client.tier] }}</span> {{ client.name }}{% if a.signed_off_at %} · signed off {{ a.signed_off_at[:10] }} by {{ signer.name }}{% endif %} · CyberHealth Score v{{ score.version }}</p>
+    <p class="muted"><span class="tier-pill tier-{{ client.tier }}">{{ tiers[client.tier] }}</span> {{ client.name }}{% if a.signed_off_at %} · signed off {{ a.signed_off_at[:10] }} {% if a.auto_from %}automatically (no change since #{{ a.auto_from }}){% else %}by {{ signer.name }}{% endif %}{% endif %} · CyberHealth Score v{{ score.version }}</p>
   </div>
   <div class="actions no-print">
     {% if 'client' in roles %}

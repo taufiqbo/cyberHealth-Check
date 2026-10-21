@@ -204,7 +204,7 @@
           {% if r.needs_review and not r.reviewed_at %}<span class="chip s-flag">Flagged</span>{% endif %}
           <div>{{ r.summary }}</div>
           {% if r.reviewed_at %}
-            <div class="review-note">Reviewed by {{ people[r.reviewed_by].name }}{% if r.original_status != r.status %} (was {{ STATUS_LABELS[r.original_status] }}){% endif %}{% if r.review_note %}: {{ r.review_note }}{% endif %}</div>
+            <div class="review-note">{% if r.reviewed_by %}Reviewed by {{ people[r.reviewed_by].name }}{% else %}Automatic{% endif %}{% if r.original_status != r.status %} (was {{ STATUS_LABELS[r.original_status] }}){% endif %}{% if r.review_note %}: {{ r.review_note }}{% endif %}</div>
           {% endif %}
           {% if r.details_obj %}
             <details><summary>Details</summary><pre>{{ r.details_obj|tojson(indent=2) }}</pre></details>
@@ -256,7 +256,7 @@
 <section class="card">
   <h2>8. Sign-off</h2>
   {% if locked %}
-    <p class="ok">Signed off {{ a.signed_off_at[:16].replace('T', ' ') }} by {{ people[a.signed_off_by].name }}{% if a.self_signoff %} (self sign-off: only reviewer on the team; recorded in the audit trail){% endif %}.
+    <p class="ok">Signed off {{ a.signed_off_at[:16].replace('T', ' ') }} {% if a.auto_from %}automatically: no change since <a href="{{ url_for('assessment', aid=a.auto_from) }}">assessment #{{ a.auto_from }}</a>{% else %}by {{ people[a.signed_off_by].name }}{% endif %}{% if a.self_signoff %} (self sign-off: only reviewer on the team; recorded in the audit trail){% endif %}.
       {% if a.signoff_note %}Note: {{ a.signoff_note }}{% endif %}</p>
   {% elif 'reviewer' in roles %}
     {% if can_signoff %}

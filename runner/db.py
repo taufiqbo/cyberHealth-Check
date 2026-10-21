@@ -62,7 +62,8 @@ CREATE TABLE IF NOT EXISTS assessments (
     self_signoff INTEGER NOT NULL DEFAULT 0,
     score_json TEXT,
     known_hosts TEXT,
-    summary_text TEXT
+    summary_text TEXT,
+    auto_from INTEGER
 );
 CREATE TABLE IF NOT EXISTS module_runs (
     id INTEGER PRIMARY KEY,
@@ -146,7 +147,7 @@ class Database:
             conn.executescript(SCHEMA)
             # Databases made by older versions lack newer columns.
             for table, column, kind in (("module_runs", "progress", "TEXT"), ("assessments", "known_hosts", "TEXT"),
-                                        ("assessments", "summary_text", "TEXT"),
+                                        ("assessments", "summary_text", "TEXT"), ("assessments", "auto_from", "INTEGER"),
                                         ("clients", "tier", "TEXT NOT NULL DEFAULT 'complimentary'"),
                                         ("clients", "active", "INTEGER NOT NULL DEFAULT 1"),
                                         ("clients", "brand_name", "TEXT"), ("clients", "logo_file", "TEXT")):

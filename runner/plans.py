@@ -12,9 +12,9 @@ LIGHT_MODULES = ["discovery", "tls", "email", "web", "brand", "lifecycle"]
 
 DEFAULTS = {
     "complimentary": {"label": "Complimentary Assessment", "report": "short", "max_domains": 1,
-                      "modules": LIGHT_MODULES, "reassess": "weekly", "active": True},
+                      "modules": LIGHT_MODULES, "reassess": "weekly", "auto_publish": True, "active": True},
     "comprehensive": {"label": "Comprehensive Assessment", "report": "full", "max_domains": 5,
-                      "modules": list(MODULES), "reassess": "weekly", "active": True},
+                      "modules": list(MODULES), "reassess": "weekly", "auto_publish": True, "active": True},
 }
 
 
@@ -64,7 +64,7 @@ def save(db, actor, key, form):
     if not active and all(not p["active"] for k, p in all_plans(db).items() if k != key):
         raise ValueError("At least one plan must stay active.")
     plan = {"label": label, "report": report, "max_domains": max_domains, "modules": modules,
-            "reassess": reassess, "active": active}
+            "reassess": reassess, "auto_publish": bool(form.get("auto_publish")), "active": active}
     _store(db, f"plan:{key}", json.dumps(plan))
     if not active and default_plan(db) == key:
         _store(db, "default_plan", next(k for k, p in all_plans(db).items() if p["active"]))

@@ -95,7 +95,7 @@ def build(service, assessment_id, tier):
         "logo_path": str(logo) if logo else None,
         "client": client["name"], "target": a["target"],
         "date": _date(a["signed_off_at"] or a["created_at"]), "draft": not a["signed_off_at"],
-        "created": _date(a["created_at"]), "signer": signer["name"] if signer else "",
+        "created": _date(a["created_at"]), "signer": signer["name"] if signer else ("Automatic (no change)" if a.get("auto_from") else ""),
         "score": score, "label": LABELS.get(grade, "Not scored"), "interpretation": interpretation(score),
         "summary": (a.get("summary_text") or "").strip() or auto_summary,
         "findings": findings, "positives": positives, "review_items": review_items,

@@ -769,3 +769,56 @@ def test_plan_settings_saved_validated_and_admin_only(demo):
     reviewer = demo.test_client()
     login(reviewer, "reviewer@demo.example", "demo-reviewer")
     assert reviewer.get("/admin/plans").status_code == 403
+
+
+# Automatic publishing ------------------------------------------------------------
+def test_unchanged_reassessment_is_published_automatically(live):
+    service = live.extensions["runner"]
+    add_people(service, ("an@x.example", ["analyst"]), ("rv@x.example", ["reviewer"]))
+    reviewer = service.db.one("SELECT * FROM users WHERE email = 'rv@x.example'")
+    first = _ready(service)
+    _clear_flags(service, first, reviewer)
+    service.sign_off(first, reviewer, "")
+
+    second = _ready(service)
+    a = service.assessment(second)
+    assert a["status"] == "signed_off" and a["auto_from"] == first and a["signed_off_by"] is None
+    assert service.score(second)["score"] == service.score(first)["score"]
+    carried = [r for r in service.results(second) if r["review_note"]]
+    assert carried and all(r["review_note"].startswith(f"Carried over from assessment #{first}") for r in carried)
+    assert service.db.one("SELECT * FROM audit WHERE action = 'assessment.auto_published'")
+    kinds = [n["kind"] for n in service.db.all("SELECT kind FROM notifications WHERE assessment_id = ?", (second,))]
+    assert "signed_off" in kinds and "ready_for_review" not in kinds
+    c = live.test_client()
+    login(c, "rv@x.example", "a-long-password")
+    assert "automatically: no change since" in c.get(f"/assessments/{second}").get_data(as_text=True)
+
+
+def test_changed_reassessment_goes_to_a_reviewer(live, monkeypatch):
+    from runner.checks import web
+    service = live.extensions["runner"]
+    add_people(service, ("an@x.example", ["analyst"]), ("rv@x.example", ["reviewer"]))
+    reviewer = service.db.one("SELECT * FROM users WHERE email = 'rv@x.example'")
+    first = _ready(service)
+    _clear_flags(service, first, reviewer)
+    service.sign_off(first, reviewer, "")
+    original = web.run
+    monkeypatch.setattr(web, "run", lambda ctx: [dict(r, status="fail") if r["control_id"] == "WEB-03" else r
+                                                 for r in original(ctx)])
+    second = _ready(service)
+    assert service.assessment(second)["status"] == "in_review"
+    skipped = service.db.one("SELECT * FROM audit WHERE action = 'assessment.auto_publish_skipped'")
+    assert "WEB-03" in skipped["detail"]
+
+
+def test_auto_publish_can_be_switched_off_per_plan(live):
+    from runner import plans
+    service = live.extensions["runner"]
+    add_people(service, ("an@x.example", ["analyst"]), ("rv@x.example", ["reviewer"]))
+    reviewer = service.db.one("SELECT * FROM users WHERE email = 'rv@x.example'")
+    service.db.run("INSERT INTO settings (key, value) VALUES ('plan:complimentary', ?)",
+                   (json.dumps({**plans.DEFAULTS["complimentary"], "auto_publish": False}),))
+    first = _ready(service)
+    _clear_flags(service, first, reviewer)
+    service.sign_off(first, reviewer, "")
+    assert service.assessment(_ready(service))["status"] == "in_review"

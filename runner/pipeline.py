@@ -7,7 +7,7 @@ import traceback
 from datetime import timedelta
 from pathlib import Path
 
-from . import audit, notify, ownership, scoring
+from . import audit, notify, ownership, plans, scoring
 from .checks import Context, get_runner
 from .controls import BY_ID, MODULES, for_module
 from .db import dumps, loads, now, parse_time
@@ -405,6 +405,8 @@ class Service:
         if busy or a["signed_off_at"]:
             return
         self.db.update("assessments", assessment_id, status="in_review", review_notified_at=now())
+        if self.auto_publish(assessment_id):
+            return
         flagged = sum(1 for r in self.results(assessment_id) if r["needs_review"] and not r["reviewed_at"])
         reviewers = [u["email"] for u in self.users_with_role("reviewer")]
         waiting = [s["label"] for m, s in self.module_states(a).items() if s["gate"] and not s["latest"]]
@@ -464,6 +466,9 @@ class Service:
         audit.record(self.db, "assessment.signed_off", actor, assessment_id, score=score["score"], grade=score["grade"],
                      self_signoff=self_signoff,
                      reason="only reviewer on the team" if self_signoff else None)
+        self._notify_signed_off(assessment_id, score)
+
+    def _notify_signed_off(self, assessment_id, score):
         a = self.assessment(assessment_id)
         client = self.db.one("SELECT * FROM clients WHERE id = ?", (a["client_id"],))
         recipients = [u["email"] for u in self.db.all("SELECT * FROM users WHERE client_id = ? AND active = 1",
@@ -477,6 +482,63 @@ class Service:
         notify.send(self.db, self.config, "signed_off", recipients, f"CyberHealth report ready: {a['target']}",
                     f"The External CyberHealth Check for {a['target']} has been reviewed and signed off. "
                     f"CyberHealth Score v{scoring.VERSION}: {grade}.", assessment_id)
+
+    # Automatic publishing ----------------------------------------------------
+    def previous_signed_off(self, assessment):
+        return self.db.one("SELECT * FROM assessments WHERE client_id = ? AND target = ? AND id < ?"
+                           " AND signed_off_at IS NOT NULL ORDER BY id DESC LIMIT 1",
+                           (assessment["client_id"], assessment["target"], assessment["id"]))
+
+    def unchanged_since(self, assessment_id, previous_id):
+        """Compares raw results with the last signed-off assessment. Returns (same, reasons why not).
+        Every control must have the same raw result; a result that needed a human decision must also have
+        the same wording (for example the same lookalike domains), so the reviewer's decision still applies."""
+        now_rows = {r["control_id"]: r for r in self.results(assessment_id)}
+        before = {r["control_id"]: r for r in self.results(previous_id)}
+        reasons = []
+        for cid, row in now_rows.items():
+            old = before[cid]
+            if row["original_status"] != old["original_status"]:
+                reasons.append(f"{cid}: {old['original_status']} -> {row['original_status']}")
+            elif row["needs_review"] and row["summary"] != old["summary"]:
+                reasons.append(f"{cid}: details changed")
+        return not reasons, reasons
+
+    def auto_publish(self, assessment_id):
+        """Signs off a re-assessment automatically when nothing changed since the last signed-off one.
+        Returns True if it did."""
+        a = self.assessment(assessment_id)
+        client = self.db.one("SELECT * FROM clients WHERE id = ?", (a["client_id"],))
+        if not client or not plans.get(self.db, client["tier"]).get("auto_publish"):
+            return False
+        previous = self.previous_signed_off(a)
+        if not previous:
+            return False
+        same, reasons = self.unchanged_since(assessment_id, previous["id"])
+        if not same:
+            audit.record(self.db, "assessment.auto_publish_skipped", None, assessment_id, previous=previous["id"],
+                         changes=reasons[:20])
+            return False
+        before = {r["control_id"]: r for r in self.results(previous["id"])}
+        stamp = now()
+        with self.db.connect() as conn:
+            for cid, old in before.items():
+                if old["status"] != old["original_status"] or old["review_note"]:
+                    conn.execute("UPDATE results SET status = ?, needs_review = 0, reviewed_at = ?, review_note = ?"
+                                 " WHERE assessment_id = ? AND control_id = ?",
+                                 (old["status"], stamp, f"Carried over from assessment #{previous['id']}: "
+                                  + (old["review_note"] or "same decision"), assessment_id, cid))
+                else:
+                    conn.execute("UPDATE results SET needs_review = 0 WHERE assessment_id = ? AND control_id = ?",
+                                 (assessment_id, cid))
+        score = self.score(assessment_id)
+        self.db.update("assessments", assessment_id, status="signed_off", signed_off_at=now(), signed_off_by=None,
+                       auto_from=previous["id"], score_json=dumps(score),
+                       signoff_note=f"Published automatically: no change since assessment #{previous['id']}.")
+        audit.record(self.db, "assessment.auto_published", None, assessment_id, previous=previous["id"],
+                     score=score["score"], grade=score["grade"])
+        self._notify_signed_off(assessment_id, score)
+        return True
 
 
 class Worker(threading.Thread):
