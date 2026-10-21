@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ BRAND }} CyberHealth{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
 </head>
 <body>
 {% if user %}
@@ -13,11 +14,15 @@
 <div class="shell">
   <aside class="sidebar">
     <a class="brand" href="{{ url_for('home') }}">
+      {% if brand_logo %}
+        <img class="brand-logo" src="{{ brand_logo }}" alt="{{ BRAND }}">
+      {% else %}
       <span class="brand-row">
         <svg class="brand-mark" viewBox="0 0 34 30" aria-hidden="true"><path d="M4 2h18l-4 9H0z" fill="#e8336d"/><path d="M8 12h22l-4 9H4z" fill="#7b3fd3"/><path d="M4 22h14l-3.6 7H0z" fill="#e8336d"/></svg>
         <span class="brand-name">{{ BRAND }}</span>
       </span>
       {% if BRAND_TAGLINE %}<span class="brand-tag">{{ BRAND_TAGLINE }}</span>{% endif %}
+      {% endif %}
       <span class="brand-product">CYBERHEALTH</span>
     </a>
     <div class="role-pill">{{ icon('shield') }}
@@ -25,10 +30,12 @@
     </div>
     <nav class="nav" aria-label="Main">
       <a href="{{ url_for('home') }}" class="{{ 'active' if ep in ('home', 'assessment', 'report') }}">{{ icon('dashboard') }} {{ 'Dashboard' if 'client' in roles else 'Assessments' }}</a>
+      {% if 'client' not in roles %}<a href="{{ url_for('domains') }}" class="{{ 'active' if ep == 'domains' }}">{{ icon('globe') }} Domains</a>{% endif %}
       {% if 'analyst' in roles %}<a href="{{ url_for('new_assessment') }}" class="{{ 'active' if ep == 'new_assessment' }}">{{ icon('plus') }} New assessment</a>{% endif %}
       {% if 'admin' in roles %}
         <a href="{{ url_for('organizations') }}" class="{{ 'active' if ep in ('organizations', 'organization') }}">{{ icon('building') }} Organizations</a>
         <a href="{{ url_for('people') }}" class="{{ 'active' if ep == 'people' }}">{{ icon('users') }} Team</a>
+        <a href="{{ url_for('branding_admin') }}" class="{{ 'active' if ep == 'branding_admin' }}">{{ icon('brush') }} Branding</a>
         <a href="{{ url_for('audit_view') }}" class="{{ 'active' if ep == 'audit_view' }}">{{ icon('audit') }} Audit trail</a>
         <a href="{{ url_for('notifications') }}" class="{{ 'active' if ep == 'notifications' }}">{{ icon('bell') }} Notifications</a>
       {% endif %}

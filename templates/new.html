@@ -10,7 +10,7 @@
     <label>Organization
       <select name="client_id" required>
         <option value="">Choose…</option>
-        {% for c in clients %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+        {% for c in clients %}<option value="{{ c.id }}" {% if preselect == c.id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
       </select>
     </label>
     {% if not clients %}<p class="warn">No organizations yet: an admin adds them under Organizations.</p>{% endif %}

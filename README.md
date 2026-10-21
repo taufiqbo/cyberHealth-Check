@@ -70,6 +70,10 @@ The scoring method is in [SCORING.md](SCORING.md); the controls are in `runner/c
 
 The first account created at start-up holds all three staff roles so a one-person team can work.
 
+## Domains and branding
+- **Domains** (sidebar, staff only) lists every domain each organization has put forward, with the number of assessments, the latest status and the last signed-off score. Pick an organization at the top to see only its domains; the list shows how many domains each one has.
+- **Branding** (sidebar, admin only) sets the platform logo and name, or a logo and name for one organization (for resellers who sell the check to their own clients). An organization's logo replaces the platform logo for its users and on its PDF reports and slides. PNG or JPEG, up to 2 MB, 16–2048 px; uploads are re-encoded to PNG and stored in `data/branding/`. Tick "Remove" to go back to the default.
+
 ## Layout
     app.py               web app (Flask): pages, roles, uploads
     runner/pipeline.py   gates, job queue, review and sign-off rules

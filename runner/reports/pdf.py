@@ -9,7 +9,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas as rl_canvas
-from reportlab.platypus import (KeepTogether, ListFlowable, ListItem, PageBreak, Paragraph, SimpleDocTemplate,
+from reportlab.platypus import (Image, KeepTogether, ListFlowable, ListItem, PageBreak, Paragraph, SimpleDocTemplate,
                                 Spacer, Table, TableStyle)
 
 from .plain import GLOSSARY
@@ -240,9 +240,20 @@ def _canvas_class(data):
     return NumberedCanvas
 
 
+def _logo(path, max_w=55 * mm, max_h=18 * mm):
+    img = Image(path)
+    ratio = min(max_w / img.imageWidth, max_h / img.imageHeight)
+    img.drawWidth, img.drawHeight = img.imageWidth * ratio, img.imageHeight * ratio
+    img.hAlign = "LEFT"
+    return img
+
+
 def _cover(data, subtitle):
     kind = "COMPREHENSIVE" if data["tier"] == "comprehensive" else "COMPLIMENTARY"
-    story = [Spacer(1, 4), P(f"{data['brand']} - {kind} SECURITY & DIGITAL ASSESSMENT REPORT",
+    story = [Spacer(1, 4)]
+    if data.get("logo_path"):
+        story += [_logo(data["logo_path"]), Spacer(1, 6)]
+    story += [P(f"{data['brand']} - {kind} SECURITY & DIGITAL ASSESSMENT REPORT",
                               "title"), P(subtitle, "subtitle")]
     story.append(table(["Assessment field", "Value"], [
         ("Organisation", data["client"]), ("Domain assessed", data["target"]),

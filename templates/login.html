@@ -4,6 +4,7 @@
 {% block public %}
 <div class="auth">
   <section class="auth-hero">
+    {% if brand_logo %}<img class="auth-logo" src="{{ brand_logo }}" alt="{{ BRAND }}">{% endif %}
     <p class="eyebrow">{{ BRAND }} CyberHealth</p>
     <h1>External security.<br>Proven and reviewed.</h1>
     <p>See what the internet sees of your domains, follow assessment results and download reports for management.</p>

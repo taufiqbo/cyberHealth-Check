@@ -62,6 +62,10 @@ class Config:
         return self.data_dir / "uploads"
 
     @property
+    def branding_dir(self):
+        return self.data_dir / "branding"
+
+    @property
     def cache_dir(self):
         return self.data_dir / "cache"
 
@@ -109,6 +113,6 @@ def load_config(**overrides):
     )
     for key, value in overrides.items():
         setattr(cfg, key, value)
-    for d in (cfg.data_dir, cfg.evidence_dir, cfg.uploads_dir, cfg.cache_dir):
+    for d in (cfg.data_dir, cfg.evidence_dir, cfg.uploads_dir, cfg.cache_dir, cfg.branding_dir):
         Path(d).mkdir(parents=True, exist_ok=True)
     return cfg

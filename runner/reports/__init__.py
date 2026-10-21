@@ -2,7 +2,7 @@
 Two tiers: complimentary (short) and comprehensive (full)."""
 from datetime import datetime
 
-from .. import scoring
+from .. import branding, scoring
 from ..controls import BY_ID, MODULES
 from ..db import loads
 from .plain import AREA_METHODS, AREA_NAMES, AREA_PLAIN, PLAIN
@@ -87,9 +87,12 @@ def build(service, assessment_id, tier):
         + (" Some areas were not assessed in this cycle: " + ", ".join(x["name"] for x in not_assessed) + "."
            if not_assessed else ""))
     signer = service.user(a["signed_off_by"]) if a["signed_off_by"] else None
+    brand = branding.for_client(service.db, service.config, client)
+    logo = branding.logo_path(service.config, brand["logo"])
     return {
         "tier": tier, "tier_label": TIERS[tier],
-        "brand": service.config.brand_name, "legal": service.config.brand_legal,
+        "brand": brand["name"], "legal": brand["name"] if brand.get("custom") else service.config.brand_legal,
+        "logo_path": str(logo) if logo else None,
         "client": client["name"], "target": a["target"],
         "date": _date(a["signed_off_at"] or a["created_at"]), "draft": not a["signed_off_at"],
         "created": _date(a["created_at"]), "signer": signer["name"] if signer else "",
@@ -104,4 +107,5 @@ def build(service, assessment_id, tier):
 def filename(data, ext):
     safe = "".join(ch if ch.isalnum() or ch in "-." else "-" for ch in data["target"])
     kind = "Comprehensive" if data["tier"] == "comprehensive" else "Complimentary"
-    return f"{data['brand'].title()}_{kind}_Assessment_{safe}.{ext}"
+    brand = "".join(ch for ch in data["brand"].title() if ch.isalnum()) or "CyberHealth"
+    return f"{brand}_{kind}_Assessment_{safe}.{ext}"

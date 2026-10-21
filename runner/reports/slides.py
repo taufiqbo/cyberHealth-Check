@@ -1,6 +1,7 @@
 """Plain-language PowerPoint deck that explains the PDF report to non-technical readers."""
 from io import BytesIO
 
+from PIL import Image
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_SHAPE
@@ -87,6 +88,19 @@ WHEN = {"critical": "Fix this week", "high": "Fix this month", "medium": "Plan w
         "low": "When convenient"}
 
 
+def _logo(slide, path, max_w=2.6, max_h=0.8):
+    """Logo top-right on a white card so dark logos stay visible on the navy title slide."""
+    with Image.open(path) as img:
+        w, h = img.size
+    ratio = min(max_w / w, max_h / h)
+    lw, lh = w * ratio, h * ratio
+    pad = 0.15
+    x = 13.34 - 0.6 - lw - 2 * pad
+    _rect(slide, x, 0.35, lw + 2 * pad, lh + 2 * pad, WHITE, MSO_SHAPE.ROUNDED_RECTANGLE)
+    slide.shapes.add_picture(path, Emu(int((x + pad) * IN)), Emu(int((0.35 + pad) * IN)),
+                             Emu(int(lw * IN)), Emu(int(lh * IN)))
+
+
 def render(data):
     prs = Presentation()
     prs.slide_width, prs.slide_height = W, H
@@ -98,7 +112,9 @@ def render(data):
     s = prs.slides.add_slide(prs.slide_layouts[6])
     _rect(s, 0, 0, 13.34, 7.5, NAVY)
     _rect(s, 0, 5.9, 13.34, 0.08, TEAL)
-    _text(s, 0.8, 1.2, 11, 0.5, f"{data['brand']} CYBERHEALTH · {data['tier_label'].upper()}", 14, True,
+    if data.get("logo_path"):
+        _logo(s, data["logo_path"])
+    _text(s, 0.8, 1.2, 11, 0.5, f"{data['brand'].upper()} CYBERHEALTH · {data['tier_label'].upper()}", 14, True,
           RGBColor(0x7F, 0xD6, 0xDC))
     _text(s, 0.8, 1.8, 11.5, 2.0, "Your security check, explained simply", 44, True, WHITE)
     _text(s, 0.8, 3.9, 11, 1.2, [data["client"], f"{data['target']} · {data['date']}"], 20,

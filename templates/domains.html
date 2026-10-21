@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block topbar %}{{ BRAND }} administration{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">{{ BRAND }} control center</p>
+    <h1>Domains</h1>
+    <p class="lead">Every domain each organization has put forward, with its latest assessment.</p>
+  </div>
+  {% if 'analyst' in roles %}<a class="button" href="{{ url_for('new_assessment', client_id=selected) }}">{{ icon('plus') }} Add</a>{% endif %}
+</div>
+
+<form method="get" class="card org-picker">
+  <span class="org-picker-label">{{ icon('building') }} Organization</span>
+  <select name="org" aria-label="Organization" data-autosubmit>
+    <option value="">All organizations</option>
+    {% for o in orgs %}<option value="{{ o.id }}" {% if selected == o.id %}selected{% endif %}>{{ o.name }} ({{ o.domain_count }} domain{{ '' if o.domain_count == 1 else 's' }})</option>{% endfor %}
+  </select>
+  <button class="small secondary js-hide">Show</button>
+  {% for o in orgs if o.id == selected %}<span class="tier-pill tier-{{ o.tier }}">{{ tiers[o.tier] }}</span>{% endfor %}
+</form>
+
+<section class="card">
+  <div class="section-head"><h2>{{ domains|length }} domain(s)</h2></div>
+  {% if not domains %}
+    <p class="muted">No domains yet{% if selected %} for this organization{% endif %}. Domains appear here once an assessment is created for them.</p>
+  {% else %}
+  <div class="table-wrap">
+  <table class="list">
+    <thead><tr><th>Domain</th>{% if not selected %}<th>Organization</th>{% endif %}<th>Assessments</th><th>Latest status</th><th>Last assessment</th><th>Last signed-off score</th><th></th></tr></thead>
+    <tbody>
+    {% for d in domains %}
+      <tr>
+        <td><span class="mono"><strong>{{ d.domain }}</strong></span></td>
+        {% if not selected %}<td>{{ d.client }} <span class="tier-pill tier-{{ d.tier }} tiny">{{ 'Comprehensive' if d.tier == 'comprehensive' else 'Complimentary' }}</span></td>{% endif %}
+        <td>{{ d.count }}</td>
+        <td><span class="state st-{{ d.latest.status }}">{{ STATUS_TEXT.get(d.latest.status, d.latest.status) }}</span></td>
+        <td>{{ d.latest.created_at[:16].replace('T', ' ') }}</td>
+        <td>{% if d.score and d.score.score is not none %}<strong>{{ d.score.score }}</strong> ({{ d.score.grade }}) · {{ d.signed.signed_off_at[:10] }}{% else %}–{% endif %}</td>
+        <td class="r"><a class="manage-link" href="{{ url_for('assessment', aid=d.latest.id) }}">Manage {{ icon('arrow') }}</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

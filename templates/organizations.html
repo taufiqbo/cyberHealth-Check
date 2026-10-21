@@ -13,11 +13,11 @@
 
 <form method="get" class="card org-picker">
   <span class="org-picker-label">{{ icon('building') }} Organization</span>
-  <select name="org" aria-label="Show one organization">
+  <select name="org" aria-label="Show one organization" data-autosubmit>
     <option value="">All organizations</option>
     {% for o in all_orgs %}<option value="{{ o.id }}" {% if selected == o.id %}selected{% endif %}>{{ o.name }}</option>{% endfor %}
   </select>
-  <button class="small secondary">Show</button>
+  <button class="small secondary js-hide">Show</button>
   {% if selected %}{% for o in all_orgs if o.id == selected %}<span class="tier-pill tier-{{ o.tier }}">{{ tiers[o.tier] }}</span>{% endfor %}{% endif %}
 </form>
 
@@ -34,7 +34,7 @@
         <td><strong>{{ o.name }}</strong>{% if o.contact_email %}<br><span class="muted">{{ o.contact_email }}</span>{% endif %}</td>
         <td><span class="tier-pill tier-{{ o.tier }}">{{ 'Comprehensive' if o.tier == 'comprehensive' else 'Complimentary' }}</span></td>
         <td>{% if o.active %}Active{% else %}<span class="warn">Suspended</span>{% endif %}</td>
-        <td>{{ o.domains }}</td>
+        <td><a href="{{ url_for('domains', org=o.id) }}">{{ o.domains }}</a></td>
         <td>{{ o.assessments }}</td>
         <td>{{ o.users }}</td>
         <td class="r"><a class="manage-link" href="{{ url_for('organization', cid=o.id) }}">Manage {{ icon('arrow') }}</a></td>

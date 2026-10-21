@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block topbar %}{{ BRAND }} administration{% endblock %}
+{% block content %}
+<p class="eyebrow">{{ BRAND }} control center</p>
+<h1>Branding</h1>
+<p class="lead">Set the platform logo, or a logo for one organization when they resell the service to their own clients.</p>
+
+<form method="get" class="card org-picker">
+  <span class="org-picker-label">{{ icon('building') }} Apply to</span>
+  <select name="scope" aria-label="Apply branding to" data-autosubmit>
+    <option value="platform" {% if not client %}selected{% endif %}>Platform · default logo for all organizations</option>
+    {% for o in orgs %}<option value="{{ o.id }}" {% if client and client.id == o.id %}selected{% endif %}>{{ o.name }}</option>{% endfor %}
+  </select>
+  <button class="small secondary js-hide">Show</button>
+  {% if client %}<span class="tier-pill tier-{{ client.tier }}">{{ tiers[client.tier] }}</span>{% endif %}
+</form>
+
+<div class="grid2">
+  <section class="card">
+    <h2>Name &amp; logo</h2>
+    <p class="muted">{% if client %}Used for {{ client.name }}: its users see it in their dashboard, and it appears on its PDF reports and slides. Leave a field empty to use the platform default.{% else %}Used on the sign-in page, for staff, and for every organization without its own logo.{% endif %}</p>
+    <form method="post" enctype="multipart/form-data">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="scope" value="{{ scope }}">
+      <label>Brand name
+        <input name="brand_name" value="{{ own_name }}" maxlength="60" placeholder="{{ default_name }}"></label>
+      <label>Upload logo · PNG / JPEG
+        <input type="file" name="logo" accept="image/png,image/jpeg"></label>
+      <p class="muted small-text">Maximum 2 MB, 16–2048 pixels wide and high. A wide logo on a transparent or white background works best.</p>
+      {% if own_logo %}<label class="check"><input type="checkbox" name="restore" value="1"> {% if client %}Remove this organization's logo (use the platform logo){% else %}Restore the original {{ default_name }} logo{% endif %}</label>{% endif %}
+      <button>{{ icon('brush') }} Save branding</button>
+    </form>
+  </section>
+  <section class="card">
+    <h2>Current logo</h2>
+    <div class="logo-preview">
+      {% if current.logo %}<img src="{{ url_for('brand_logo', filename=current.logo) }}" alt="Current logo">
+      {% else %}
+        <span class="brand-row"><svg class="brand-mark" viewBox="0 0 34 30" aria-hidden="true"><path d="M4 2h18l-4 9H0z" fill="#e8336d"/><path d="M8 12h22l-4 9H4z" fill="#7b3fd3"/><path d="M4 22h14l-3.6 7H0z" fill="#e8336d"/></svg><span class="brand-name">{{ current.name }}</span></span>
+      {% endif %}
+    </div>
+    <p><strong>{{ current.name }}</strong></p>
+    <p class="muted">{% if client %}{% if own_logo %}This organization's own logo.{% else %}No own logo yet: this organization uses the platform logo.{% endif %}{% else %}{% if current.logo %}Uploaded platform logo.{% else %}Built-in {{ default_name }} logo.{% endif %} It appears on the sign-in page and is the default for organizations.{% endif %}</p>
+  </section>
+</div>
+{% endblock %}

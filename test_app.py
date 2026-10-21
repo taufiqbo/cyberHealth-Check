@@ -625,3 +625,92 @@ def test_every_control_has_plain_wording():
     from runner.reports.plain import PLAIN
     assert set(PLAIN) == {c.id for c in CONTROLS}
     assert all(set(v) == {"finding", "impact", "action", "good"} for v in PLAIN.values())
+
+
+# Domains and branding ----------------------------------------------------------
+def _png(w=64, h=32, fmt="PNG"):
+    from io import BytesIO
+    from PIL import Image
+    out = BytesIO()
+    Image.new("RGB", (w, h), (14, 124, 134)).save(out, format=fmt)
+    return out.getvalue()
+
+
+def _upload(c, scope, logo=None, **fields):
+    from io import BytesIO
+    data = {"csrf": csrf_of(c), "scope": scope, **fields}
+    if logo is not None:
+        data["logo"] = (BytesIO(logo), "logo.png")
+    return c.post("/admin/branding", data=data, content_type="multipart/form-data")
+
+
+def test_domains_page_lists_and_filters(demo):
+    c = demo.test_client()
+    login(c, "reviewer@demo.example", "demo-reviewer")
+    page = c.get("/admin/domains").get_data(as_text=True)
+    assert DOMAIN in page and "domain(s)" in page and "Organization" in page
+    assert "(1 domain)" in page or "domains)" in page
+    assert DOMAIN not in c.get("/admin/domains?org=999").get_data(as_text=True).split("domain(s)")[1]
+    client = demo.test_client()
+    login(client, f"client@{DOMAIN}", "demo-client")
+    assert client.get("/admin/domains").status_code == 403
+
+
+@pytest.mark.parametrize("logo, message", [
+    (b"not an image", "not a readable"),
+    (_png(8, 8), "between 16 and 2048"),
+    (_png(fmt="GIF"), "PNG or JPEG"),
+    (b"\x89PNG" + b"0" * (2 * 1024 * 1024), "2 MB"),
+])
+def test_branding_rejects_bad_logos(demo, logo, message):
+    c = demo.test_client()
+    login(c, "admin@demo.example", "demo-admin")
+    resp = _upload(c, "1", logo, brand_name="Partner")
+    assert message in c.get(resp.headers["Location"]).get_data(as_text=True)
+    assert demo.extensions["runner"].db.one("SELECT logo_file FROM clients WHERE id = 1")["logo_file"] is None
+
+
+def test_org_branding_shows_for_its_users_reports_and_can_be_restored(demo):
+    import zipfile
+    from io import BytesIO
+    from runner import reports
+    from runner.reports import pdf, slides
+    service = demo.extensions["runner"]
+    admin = demo.test_client()
+    login(admin, "admin@demo.example", "demo-admin")
+    _upload(admin, "1", _png(), brand_name="Partner Security", restore="")
+    org = service.db.one("SELECT * FROM clients WHERE id = 1")
+    assert org["brand_name"] == "Partner Security" and org["logo_file"].startswith("org-1-")
+    logo_url = f"/brand/logo/{org['logo_file']}"
+
+    client = demo.test_client()
+    login(client, f"client@{DOMAIN}", "demo-client")
+    home = client.get("/").get_data(as_text=True)
+    assert logo_url in home and "Partner Security" in home
+    assert client.get(logo_url).status_code == 200
+    assert demo.test_client().get(logo_url).status_code == 404  # not public
+
+    data = reports.build(service, 1, "complimentary")
+    assert data["brand"] == "Partner Security" and data["logo_path"].endswith(org["logo_file"])
+    assert pdf.render(data).startswith(b"%PDF")
+    deck = zipfile.ZipFile(BytesIO(slides.render(data)))
+    assert any(n.startswith("ppt/media/") for n in deck.namelist())
+
+    _upload(admin, "1", brand_name="", restore="1")
+    org = service.db.one("SELECT * FROM clients WHERE id = 1")
+    assert org["logo_file"] is None and not (service.config.branding_dir / Path(logo_url).name).exists()
+    assert "Partner Security" not in client.get("/").get_data(as_text=True)
+
+
+def test_platform_logo_is_public_and_admin_only_to_change(demo):
+    admin = demo.test_client()
+    login(admin, "admin@demo.example", "demo-admin")
+    _upload(admin, "platform", _png(), brand_name="")
+    name = demo.extensions["runner"].db.one("SELECT value FROM settings WHERE key = 'logo_file'")["value"]
+    anon = demo.test_client()
+    assert f"/brand/logo/{name}" in anon.get("/login").get_data(as_text=True)
+    assert anon.get(f"/brand/logo/{name}").status_code == 200
+    reviewer = demo.test_client()
+    login(reviewer, "reviewer@demo.example", "demo-reviewer")
+    assert reviewer.get("/admin/branding").status_code == 403
+    assert admin.get("/admin/branding?scope=1").status_code == 200

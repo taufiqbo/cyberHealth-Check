@@ -107,6 +107,10 @@ CREATE TABLE IF NOT EXISTS notifications (
     delivery TEXT NOT NULL,
     error TEXT
 );
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT
+);
 CREATE TABLE IF NOT EXISTS audit (
     id INTEGER PRIMARY KEY,
     at TEXT NOT NULL,
@@ -144,7 +148,8 @@ class Database:
             for table, column, kind in (("module_runs", "progress", "TEXT"), ("assessments", "known_hosts", "TEXT"),
                                         ("assessments", "summary_text", "TEXT"),
                                         ("clients", "tier", "TEXT NOT NULL DEFAULT 'complimentary'"),
-                                        ("clients", "active", "INTEGER NOT NULL DEFAULT 1")):
+                                        ("clients", "active", "INTEGER NOT NULL DEFAULT 1"),
+                                        ("clients", "brand_name", "TEXT"), ("clients", "logo_file", "TEXT")):
                 columns = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
                 if column not in columns:
                     conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")

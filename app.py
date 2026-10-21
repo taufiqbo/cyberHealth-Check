@@ -10,7 +10,7 @@ from flask import Flask, abort, flash, g, jsonify, redirect, render_template, re
 from werkzeug.security import check_password_hash
 from werkzeug.utils import secure_filename
 
-from runner import accounts, audit, ownership, scoring
+from runner import accounts, audit, branding, ownership, scoring
 from runner.checks.vulns import parse_greenbone
 from runner.config import load_config
 from runner.controls import BY_ID, MODULES, REVIEWER_CHOICES, STATUS_LABELS
@@ -110,7 +110,11 @@ def register(app, service):
     def inject():
         if "csrf" not in session:
             session["csrf"] = secrets.token_urlsafe(32)
-        return {"csrf": session["csrf"], "user": g.get("user"), "roles": g.get("roles", set())}
+        user = g.get("user")
+        client = db.one("SELECT * FROM clients WHERE id = ?", (user["client_id"],)) if user and user["client_id"] else None
+        brand = branding.for_client(db, config, client)
+        return {"csrf": session["csrf"], "user": user, "roles": g.get("roles", set()), "BRAND": brand["name"],
+                "brand_logo": url_for("brand_logo", filename=brand["logo"]) if brand["logo"] else None}
 
     def login_required(fn):
         @wraps(fn)
@@ -233,7 +237,7 @@ def register(app, service):
                 return redirect(url_for("assessment", aid=aid))
             except ValueError as exc:
                 flash(str(exc), "error")
-        return render_template("new.html", clients=clients)
+        return render_template("new.html", clients=clients, preselect=request.args.get("client_id", type=int))
 
     @app.route("/assessments/<int:aid>")
     @login_required
@@ -504,6 +508,68 @@ def register(app, service):
                        " ORDER BY u.active DESC, u.email")
         clients = db.all("SELECT * FROM clients ORDER BY name")
         return render_template("people.html", users=users, clients=clients, all_roles=accounts.ALL_ROLES)
+
+    # Branding ------------------------------------------------------------------
+    @app.route("/brand/logo/<filename>")
+    def brand_logo(filename):
+        """The platform logo is public (sign-in page); an organization's logo only for its users and staff."""
+        if filename != branding.platform(db, config)["logo"]:
+            owner = db.one("SELECT id FROM clients WHERE logo_file = ?", (filename,))
+            if not owner or not g.user or (not is_staff() and g.user["client_id"] != owner["id"]):
+                abort(404)
+        path = branding.logo_path(config, filename)
+        if not path or not path.exists():
+            abort(404)
+        return send_file(path.resolve(), mimetype="image/png", max_age=300)
+
+    @app.route("/admin/branding", methods=["GET", "POST"])
+    @role_required("admin")
+    def branding_admin():
+        scope = request.values.get("scope", "platform")
+        client_id = None if scope == "platform" else int(scope) if scope.isdigit() else None
+        client = db.one("SELECT * FROM clients WHERE id = ?", (client_id,)) if client_id else None
+        if client_id and not client:
+            abort(404)
+        if request.method == "POST":
+            try:
+                file = request.files.get("logo")
+                raw = file.read(branding.MAX_BYTES + 1) if file and file.filename else None
+                branding.save(db, config, g.user, client_id, request.form.get("brand_name", ""), raw,
+                              bool(request.form.get("restore")))
+                flash("Branding saved.", "ok")
+            except ValueError as exc:
+                flash(str(exc), "error")
+            return redirect(url_for("branding_admin", scope=scope))
+        current = branding.for_client(db, config, client) if client else {**branding.platform(db, config),
+                                                                             "scope": "platform"}
+        own_name = (client["brand_name"] if client else branding._setting(db, "brand_name")) or ""
+        own_logo = (client["logo_file"] if client else branding._setting(db, "logo_file"))
+        orgs = db.all("SELECT id, name, tier FROM clients ORDER BY lower(name)")
+        return render_template("branding.html", scope=scope, client=client, orgs=orgs, tiers=TIERS, current=current,
+                               own_name=own_name, own_logo=own_logo, default_name=config.brand_name)
+
+    # Domains -------------------------------------------------------------------
+    @app.route("/admin/domains")
+    @role_required("admin", "analyst", "reviewer")
+    def domains():
+        selected = request.args.get("org", type=int)
+        rows = db.all(
+            "SELECT a.*, c.name AS client_name, c.tier AS tier FROM assessments a JOIN clients c ON c.id = a.client_id"
+            + (" WHERE a.client_id = ?" if selected else "") + " ORDER BY a.id DESC", (selected,) if selected else ())
+        by_domain = {}
+        for a in rows:
+            key = (a["client_id"], a["target"])
+            d = by_domain.setdefault(key, {"domain": a["target"], "client_id": a["client_id"], "client": a["client_name"],
+                                           "tier": a["tier"], "latest": a, "count": 0, "signed": None})
+            d["count"] += 1
+            if a["signed_off_at"] and not d["signed"]:
+                d["signed"] = a
+        domains_list = sorted(by_domain.values(), key=lambda d: (d["client"].lower(), d["domain"]))
+        for d in domains_list:
+            d["score"] = loads(d["signed"]["score_json"]) if d["signed"] else None
+        orgs = db.all("SELECT c.id, c.name, c.tier, COUNT(DISTINCT a.target) AS domain_count FROM clients c "
+                      "LEFT JOIN assessments a ON a.client_id = c.id GROUP BY c.id ORDER BY lower(c.name)")
+        return render_template("domains.html", domains=domains_list, orgs=orgs, selected=selected, tiers=TIERS)
 
     # Organizations -------------------------------------------------------------
     def org_form(require_name=True):
