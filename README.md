@@ -75,7 +75,7 @@ The first account created at start-up holds all three staff roles so a one-perso
 - **Branding** (sidebar, admin only) sets the platform logo and name, or a logo and name for one organization (for resellers who sell the check to their own clients). An organization's logo replaces the platform logo for its users and on its PDF reports and slides. PNG or JPEG, up to 2 MB, 16–2048 px; uploads are re-encoded to PNG and stored in `data/branding/`. Tick "Remove" to go back to the default.
 
 ## Plan settings
-**Plan settings** (sidebar, admin only) sets what each plan includes: the name clients see, which report they can download, the maximum number of domains, which check areas run, how often domains are re-assessed automatically (off, monthly, every 3 or 6 months, yearly), whether the plan is active, and which plan new organizations get. The settings are saved and audited now; applying the domain limit, check areas and automatic re-assessment is the next build step.
+**Plan settings** (sidebar, admin only) sets what each plan includes: the name clients see, which report they can download, the maximum number of domains, which check areas run, how often domains are re-assessed automatically (off, weekly, monthly, every 3 or 6 months, yearly; both plans default to weekly), whether the plan is active, and which plan new organizations get. The settings are saved and audited now; applying the domain limit, check areas and automatic re-assessment is the next build step.
 
 ## Layout
     app.py               web app (Flask): pages, roles, uploads

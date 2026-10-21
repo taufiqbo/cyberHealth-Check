@@ -6,15 +6,15 @@ from . import audit
 from .controls import MODULES
 
 REPORTS = {"short": "Short report (executive summary) + slides", "full": "Full report (all findings) + slides"}
-FREQUENCIES = {"off": "Off", "monthly": "Every month", "quarterly": "Every 3 months",
+FREQUENCIES = {"off": "Off", "weekly": "Every week", "monthly": "Every month", "quarterly": "Every 3 months",
                "half-yearly": "Every 6 months", "yearly": "Every year"}
 LIGHT_MODULES = ["discovery", "tls", "email", "web", "brand", "lifecycle"]
 
 DEFAULTS = {
     "complimentary": {"label": "Complimentary Assessment", "report": "short", "max_domains": 1,
-                      "modules": LIGHT_MODULES, "reassess": "quarterly", "active": True},
+                      "modules": LIGHT_MODULES, "reassess": "weekly", "active": True},
     "comprehensive": {"label": "Comprehensive Assessment", "report": "full", "max_domains": 5,
-                      "modules": list(MODULES), "reassess": "monthly", "active": True},
+                      "modules": list(MODULES), "reassess": "weekly", "active": True},
 }
 
 
