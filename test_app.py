@@ -714,3 +714,29 @@ def test_platform_logo_is_public_and_admin_only_to_change(demo):
     login(reviewer, "reviewer@demo.example", "demo-reviewer")
     assert reviewer.get("/admin/branding").status_code == 403
     assert admin.get("/admin/branding?scope=1").status_code == 200
+
+
+def test_plan_settings_saved_validated_and_admin_only(demo):
+    from runner import plans
+    db = demo.extensions["runner"].db
+    c = demo.test_client()
+    login(c, "admin@demo.example", "demo-admin")
+    assert "Plan settings" in c.get("/admin/plans").get_data(as_text=True)
+    c.post("/admin/plans", data={"csrf": csrf_of(c), "plan": "complimentary", "label": "Starter", "report": "short",
+                                 "max_domains": "2", "modules": ["discovery", "email", "bogus"], "reassess": "yearly",
+                                 "active": "1", "make_default": "1"})
+    p = plans.get(db, "complimentary")
+    assert (p["label"], p["max_domains"], p["modules"], p["reassess"]) == ("Starter", 2, ["discovery", "email"], "yearly")
+    assert plans.default_plan(db) == "complimentary"
+    assert db.one("SELECT * FROM audit WHERE action = 'plan.updated'")
+    resp = c.post("/admin/plans", data={"csrf": csrf_of(c), "plan": "comprehensive", "label": "Full", "report": "full",
+                                        "max_domains": "0", "modules": ["tls"], "reassess": "monthly", "active": "1"})
+    assert "between 1 and 500" in c.get(resp.headers["Location"]).get_data(as_text=True)
+    assert plans.get(db, "comprehensive")["label"] == "Comprehensive Assessment"  # unchanged
+    for key in ("comprehensive", "complimentary"):  # the last active plan cannot be switched off
+        c.post("/admin/plans", data={"csrf": csrf_of(c), "plan": key, "label": "X", "report": "full",
+                                     "max_domains": "1", "modules": ["tls"], "reassess": "off"})
+    assert plans.get(db, "complimentary")["active"] and not plans.get(db, "comprehensive")["active"]
+    reviewer = demo.test_client()
+    login(reviewer, "reviewer@demo.example", "demo-reviewer")
+    assert reviewer.get("/admin/plans").status_code == 403

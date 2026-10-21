@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block topbar %}{{ BRAND }} administration{% endblock %}
+{% block content %}
+<p class="eyebrow">{{ BRAND }} control center</p>
+<h1>Plan settings</h1>
+<p class="lead">Decide what each plan includes. Organizations get their plan on the Organizations page.</p>
+<p class="notice">Saved settings are kept now. Domain limits, check areas and automatic re-assessment start being applied in the next step of the build.</p>
+
+<div class="grid2">
+{% for key, p in plans.items() %}
+  <section class="card" id="plan-{{ key }}">
+    <div class="section-head">
+      <h2>{{ p.label }}</h2>
+      <span>
+        {% if key == default %}<span class="tier-pill tier-{{ key }}">Default for new organizations</span>{% endif %}
+        {% if not p.active %}<span class="warn">Inactive</span>{% endif %}
+      </span>
+    </div>
+    <p class="muted">{{ counts.get(key, 0) }} organization(s) on this plan.</p>
+    <form method="post">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="plan" value="{{ key }}">
+      <label>Plan name shown to clients <input name="label" value="{{ p.label }}" maxlength="60" required></label>
+      <label>Report the client can download
+        <select name="report">{% for k, v in reports.items() %}<option value="{{ k }}" {% if p.report == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+      </label>
+      <label>Max domains per organization <input type="number" name="max_domains" min="1" max="500" value="{{ p.max_domains }}" required></label>
+      <fieldset class="plan-modules">
+        <legend>Check areas included</legend>
+        {% for m, name in MODULES.items() %}
+          <label class="check"><input type="checkbox" name="modules" value="{{ m }}" {% if m in p.modules %}checked{% endif %}> {{ name }}</label>
+        {% endfor %}
+      </fieldset>
+      <label>Automatic re-assessment
+        <select name="reassess">{% for k, v in frequencies.items() %}<option value="{{ k }}" {% if p.reassess == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+      </label>
+      <p class="muted small-text">Each domain on this plan is checked again automatically at this interval. Results still go to a reviewer before the client sees them.</p>
+      <label class="check"><input type="checkbox" name="active" value="1" {% if p.active %}checked{% endif %}> Active (can be given to organizations)</label>
+      {% if key != default %}<label class="check"><input type="checkbox" name="make_default" value="1"> Default for new organizations</label>{% endif %}
+      <p><button>{{ icon('layers') }} Save {{ p.label }}</button></p>
+    </form>
+  </section>
+{% endfor %}
+</div>
+{% endblock %}

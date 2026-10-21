@@ -10,7 +10,7 @@ from flask import Flask, abort, flash, g, jsonify, redirect, render_template, re
 from werkzeug.security import check_password_hash
 from werkzeug.utils import secure_filename
 
-from runner import accounts, audit, branding, ownership, scoring
+from runner import accounts, audit, branding, ownership, plans, scoring
 from runner.checks.vulns import parse_greenbone
 from runner.config import load_config
 from runner.controls import BY_ID, MODULES, REVIEWER_CHOICES, STATUS_LABELS
@@ -548,6 +548,22 @@ def register(app, service):
         return render_template("branding.html", scope=scope, client=client, orgs=orgs, tiers=TIERS, current=current,
                                own_name=own_name, own_logo=own_logo, default_name=config.brand_name)
 
+    # Plans ---------------------------------------------------------------------
+    @app.route("/admin/plans", methods=["GET", "POST"])
+    @role_required("admin")
+    def plan_settings():
+        if request.method == "POST":
+            key = request.form.get("plan", "")
+            try:
+                plan = plans.save(db, g.user, key, request.form)
+                flash(f"{plan['label']} saved.", "ok")
+            except ValueError as exc:
+                flash(str(exc), "error")
+            return redirect(url_for("plan_settings") + (f"#plan-{key}" if key in plans.DEFAULTS else ""))
+        counts = {r["tier"]: r["n"] for r in db.all("SELECT tier, COUNT(*) AS n FROM clients GROUP BY tier")}
+        return render_template("plans.html", plans=plans.all_plans(db), default=plans.default_plan(db), counts=counts,
+                               reports=plans.REPORTS, frequencies=plans.FREQUENCIES)
+
     # Domains -------------------------------------------------------------------
     @app.route("/admin/domains")
     @role_required("admin", "analyst", "reviewer")
@@ -609,7 +625,8 @@ def register(app, service):
         if selected:
             orgs = [o for o in orgs if o["id"] == selected] or orgs
         all_orgs = db.all("SELECT id, name, tier FROM clients ORDER BY lower(name)")
-        return render_template("organizations.html", orgs=orgs, all_orgs=all_orgs, selected=selected, tiers=TIERS)
+        return render_template("organizations.html", orgs=orgs, all_orgs=all_orgs, selected=selected, tiers=TIERS,
+                               default_plan=plans.default_plan(db))
 
     @app.route("/admin/organizations/<int:cid>", methods=["GET", "POST"])
     @role_required("admin")

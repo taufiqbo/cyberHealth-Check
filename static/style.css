@@ -224,3 +224,7 @@ td.r { text-align: right; }
 }
 [hidden] { display: none !important; }
 table.list .state, table.list td .mono { white-space: nowrap; }
+.notice { background: #eef4fb; color: #1d4e89; padding: 12px 16px; border-radius: 12px; margin: 0 0 18px; }
+.plan-modules { margin: 6px 0 14px; }
+.plan-modules legend { font-weight: 600; padding: 0 4px; }
+.plan-modules label.check { margin: 6px 16px 6px 0; }
