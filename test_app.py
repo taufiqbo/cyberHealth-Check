@@ -395,6 +395,7 @@ def test_nmap_parser():
 class _Cfg:
     max_web_hosts = 10
     cache_dir = "/nonexistent"
+    lookalike_tlds = ["com", "net", "org", "my", "com.my"]
 
 
 def _ctx(net, target=DOMAIN):
@@ -480,6 +481,34 @@ def test_registration_falls_back_to_whois_when_rdap_has_nothing():
             return "whois.mynic.my", "Expiry Date: 2099-01-01\nDomain Status: clientTransferProhibited\n"
     r = _registration_result(_ctx(Net(), "bintara.com.my"))
     assert r["status"] == "pass" and "WHOIS" in r["summary"]
+
+
+def test_lookalikes_cover_brand_name_on_other_tlds():
+    from runner.checks import brand
+    assert brand.brand_label("bintara.com.my") == "bintara" and brand.brand_label("shop.example.co.uk") == "example"
+    samples = {
+        "bintara.com.my": [{"fuzzer": "*original", "domain": "bintara.com.my", "dns_a": ["192.0.2.1"]},
+                           {"fuzzer": "omission", "domain": "bintra.com.my", "dns_a": ["192.0.2.2"]}],
+        "bintara.com": [{"fuzzer": "*original", "domain": "bintara.com", "dns_a": ["192.0.2.3"]},
+                        {"fuzzer": "omission", "domain": "intara.com", "dns_a": ["192.0.2.4"], "dns_mx": ["mx.example"]},
+                        {"fuzzer": "omission", "domain": "bintra.com.my", "dns_a": ["192.0.2.2"]}],
+        "bintara.net": [{"fuzzer": "*original", "domain": "bintara.net"}],
+    }
+
+    class Net(DemoNet):
+        def run(self, argv, timeout=1800):
+            if argv[-1] not in samples:
+                return 1, "", "network error"
+            return 0, json.dumps(samples[argv[-1]]), ""
+    ctx = _ctx(Net(), "bintara.com.my")
+    rows = {r["domain"]: r for r in brand._lookalikes(ctx)}
+    assert set(rows) == {"bintra.com.my", "bintara.com", "intara.com"}  # unregistered bintara.net left out
+    assert rows["bintara.com"]["fuzzer"] == "tld-swap" and rows["intara.com"]["mx"] == ["mx.example"]
+    assert ctx.evidence["lookalike_bases"][:2] == ["bintara.com.my", "bintara.com"]
+    assert len(ctx.evidence["lookalike_failures"]) == 2  # .org and .my failed; the others still count
+    results = {r["control_id"]: r for r in brand.run(_ctx(Net(), "bintara.com.my"))}
+    assert results["BRD-02"]["status"] == "partial" and "searched bintara.com.my, bintara.com" in results["BRD-02"]["summary"]
+    assert results["BRD-03"]["status"] == "fail" and "intara.com" in results["BRD-03"]["summary"]
 
 
 def test_dnstwist_found_through_python_when_not_on_path(monkeypatch, tmp_path):

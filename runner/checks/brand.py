@@ -7,29 +7,63 @@ from ..net import NetError
 from . import all_status, result
 
 
+SECOND_LEVEL = {"com", "net", "org", "edu", "gov", "co", "ac", "or", "ne", "go", "mil", "biz", "name"}
+
+
+def brand_label(domain):
+    """The name people type: bintara.com.my -> bintara, www.example.co.uk -> example."""
+    labels = domain.lower().split(".")
+    suffix = 2 if len(labels) >= 3 and len(labels[-1]) == 2 and labels[-2] in SECOND_LEVEL else 1
+    return labels[-suffix - 1] if len(labels) > suffix else labels[0]
+
+
+def lookalike_bases(target, tlds):
+    """The domain itself plus the brand name on common TLDs, so bintara.com.my also covers intara.com."""
+    label = brand_label(target)
+    bases = [target] + [f"{label}.{t.strip('. ').lower()}" for t in tlds if t.strip('. ')]
+    return list(dict.fromkeys(bases))
+
+
+def _dnstwist(ctx, argv, base):
+    rc, out, err = ctx.net.run([*argv, "--registered", "--format", "json", base], timeout=1800)
+    if rc != 0 and not out.strip():
+        raise NetError(f"dnstwist failed on {base}: {err.strip()[:300]}")
+    try:
+        return json.loads(out or "[]")
+    except ValueError as exc:
+        raise NetError(f"dnstwist output for {base} could not be read") from exc
+
+
 def _lookalikes(ctx):
     argv = ctx.net.tool_argv("dnstwist")
     if not argv:
         raise NetError("dnstwist is not installed (pip install dnstwist)")
-    ctx.progress("running dnstwist (lookalike domains; can take 10+ minutes)")
-    rc, out, err = ctx.net.run([*argv, "--registered", "--format", "json", ctx.target], timeout=1800)
-    if rc != 0 and not out.strip():
-        raise NetError(f"dnstwist failed: {err.strip()[:300]}")
-    try:
-        rows = json.loads(out)
-    except ValueError as exc:
-        raise NetError("dnstwist output could not be read") from exc
-    out_rows = []
-    for row in rows:
-        if row.get("fuzzer") == "*original" or row.get("domain") == ctx.target:
+    bases = lookalike_bases(ctx.target, ctx.config.lookalike_tlds)
+    found, failures = {}, []
+    for i, base in enumerate(bases, 1):
+        ctx.progress(f"running dnstwist on {base} ({i}/{len(bases)}; can take several minutes)")
+        try:
+            rows = _dnstwist(ctx, argv, base)
+        except NetError as exc:
+            failures.append(str(exc))
             continue
-        out_rows.append({
-            "domain": row.get("domain", row.get("domain-name")),
-            "fuzzer": row.get("fuzzer"),
-            "a": row.get("dns_a", row.get("dns-a", [])),
-            "mx": [m for m in row.get("dns_mx", row.get("dns-mx", [])) if m and m != "!ServFail"],
-        })
-    return out_rows
+        for row in rows:
+            domain = (row.get("domain") or row.get("domain-name") or "").lower()
+            if not domain or domain == ctx.target or domain in found:
+                continue
+            a = row.get("dns_a", row.get("dns-a", [])) + row.get("dns_aaaa", row.get("dns-aaaa", []))
+            mx = [m for m in row.get("dns_mx", row.get("dns-mx", [])) if m and m != "!ServFail"]
+            ns = row.get("dns_ns", row.get("dns-ns", []))
+            if row.get("fuzzer") == "*original" and not (a or mx or ns):
+                continue  # the brand name on another TLD, not registered
+            found[domain] = {"domain": domain, "base": base,
+                             "fuzzer": "tld-swap" if row.get("fuzzer") == "*original" else row.get("fuzzer"),
+                             "a": [x for x in a if x and not x.startswith("!")], "mx": mx}
+    if failures and len(failures) == len(bases):
+        raise NetError("; ".join(failures))
+    ctx.evidence["lookalike_bases"] = bases
+    ctx.evidence["lookalike_failures"] = failures
+    return list(found.values())
 
 
 MONTHS = {m: i for i, m in enumerate(["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct",
@@ -127,8 +161,13 @@ def run(ctx):
             results.append(result("BRD-01", "pass", "No live lookalike websites found."))
         n = len(rows)
         status = "pass" if n == 0 else "partial" if n <= 10 else "fail"
-        results.append(result("BRD-02", status, f"{n} lookalike domain(s) registered.",
-                              {"registered": [r["domain"] for r in rows][:100]}))
+        bases = ctx.evidence["lookalike_bases"]
+        failed = ctx.evidence["lookalike_failures"]
+        results.append(result("BRD-02", status,
+                              f"{n} lookalike domain(s) registered (searched {', '.join(bases)})."
+                              + (f" Some searches failed: {'; '.join(failed)}" if failed else ""),
+                              {"registered": [f"{r['domain']} ({r['fuzzer']})" for r in rows][:200],
+                               "searched": bases}, review=bool(failed)))
         if mail:
             results.append(result("BRD-03", "fail",
                                   f"{len(mail)} lookalike domain(s) can receive email: "

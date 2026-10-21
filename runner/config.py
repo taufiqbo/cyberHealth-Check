@@ -44,6 +44,7 @@ class Config:
     inline_worker: bool = True
     secure_cookies: bool = False
     tool_paths: dict = field(default_factory=dict)
+    lookalike_tlds: list = field(default_factory=lambda: ["com", "net", "org", "my", "com.my"])
     brand_name: str = "BINTARA"
     brand_tagline: str = "We get IT Done. Delivered"
     brand_contact: str = ""
@@ -104,6 +105,7 @@ def load_config(**overrides):
         brand_tagline=os.environ.get("RUNNER_BRAND_TAGLINE", "We get IT Done. Delivered"),
         brand_contact=os.environ.get("RUNNER_BRAND_CONTACT", ""),
         brand_legal=os.environ.get("RUNNER_BRAND_LEGAL", "Bintara Solutions Sdn Bhd"),
+        lookalike_tlds=[t for t in os.environ.get("RUNNER_LOOKALIKE_TLDS", "com,net,org,my,com.my").split(",") if t.strip()],
         tool_paths={
             "nmap": os.environ.get("NMAP_PATH", "nmap"),
             "dnstwist": os.environ.get("DNSTWIST_PATH", "dnstwist"),
