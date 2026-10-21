@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS clients (
     name TEXT NOT NULL,
     contact_email TEXT,
     created_at TEXT NOT NULL,
-    tier TEXT NOT NULL DEFAULT 'complimentary'
+    tier TEXT NOT NULL DEFAULT 'complimentary',
+    active INTEGER NOT NULL DEFAULT 1
 );
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY,
@@ -142,7 +143,8 @@ class Database:
             # Databases made by older versions lack newer columns.
             for table, column, kind in (("module_runs", "progress", "TEXT"), ("assessments", "known_hosts", "TEXT"),
                                         ("assessments", "summary_text", "TEXT"),
-                                        ("clients", "tier", "TEXT NOT NULL DEFAULT 'complimentary'")):
+                                        ("clients", "tier", "TEXT NOT NULL DEFAULT 'complimentary'"),
+                                        ("clients", "active", "INTEGER NOT NULL DEFAULT 1")):
                 columns = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
                 if column not in columns:
                     conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")

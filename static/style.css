@@ -157,6 +157,18 @@ code.wrap { white-space: pre-wrap; word-break: break-word; font-size: 12px; }
 .tier-row select { margin: 0; width: auto; }
 .downloads { margin-top: 12px; }
 
+.org-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 14px 20px; }
+.org-picker-label { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-weight: 500; }
+.org-picker-label .icon { color: var(--primary); }
+.org-picker select { flex: 1; min-width: 200px; margin: 0; border: 0; background: transparent; font-weight: 700; font-size: 17px; }
+.manage-link { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+.manage-link .icon { width: 16px; height: 16px; }
+td.r { text-align: right; }
+.narrow-left { max-width: 560px; }
+.grid2.one { grid-template-columns: minmax(0, 1fr); max-width: 640px; }
+.plan-value { font-size: 22px; }
+.plan-list { padding-left: 18px; } .plan-list li { margin: 6px 0; }
+
 /* Sign-in page ----------------------------------------------------------- */
 .auth { min-height: 100vh; display: grid; grid-template-columns: 1.1fr 1fr; background: linear-gradient(120deg, #ffffff 0%, #f6efff 55%, #eaf9f9 100%); }
 .auth-hero { padding: 9vh 7vw; display: flex; flex-direction: column; justify-content: center; }

@@ -27,7 +27,8 @@
       <a href="{{ url_for('home') }}" class="{{ 'active' if ep in ('home', 'assessment', 'report') }}">{{ icon('dashboard') }} {{ 'Dashboard' if 'client' in roles else 'Assessments' }}</a>
       {% if 'analyst' in roles %}<a href="{{ url_for('new_assessment') }}" class="{{ 'active' if ep == 'new_assessment' }}">{{ icon('plus') }} New assessment</a>{% endif %}
       {% if 'admin' in roles %}
-        <a href="{{ url_for('people') }}" class="{{ 'active' if ep == 'people' }}">{{ icon('users') }} Team and clients</a>
+        <a href="{{ url_for('organizations') }}" class="{{ 'active' if ep in ('organizations', 'organization') }}">{{ icon('building') }} Organizations</a>
+        <a href="{{ url_for('people') }}" class="{{ 'active' if ep == 'people' }}">{{ icon('users') }} Team</a>
         <a href="{{ url_for('audit_view') }}" class="{{ 'active' if ep == 'audit_view' }}">{{ icon('audit') }} Audit trail</a>
         <a href="{{ url_for('notifications') }}" class="{{ 'active' if ep == 'notifications' }}">{{ icon('bell') }} Notifications</a>
       {% endif %}

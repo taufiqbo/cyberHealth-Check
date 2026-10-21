@@ -1,9 +1,10 @@
 {% extends "base.html" %}
-{% block topbar %}Team and clients{% endblock %}
+{% block topbar %}Team{% endblock %}
 {% block content %}
 <p class="eyebrow">Administration</p>
-<h1>Team and clients</h1>
-<div class="grid2">
+<h1>Team</h1>
+<p class="lead">Staff accounts and client user accounts. Organizations and their plans are managed under <a href="{{ url_for('organizations') }}">Organizations</a>.</p>
+<div class="grid2 one">
   <section class="card">
     <h2>Add a person</h2>
     <form method="post">
@@ -14,40 +15,17 @@
       <fieldset><legend>Roles</legend>
         {% for r in all_roles %}<label class="check"><input type="checkbox" name="roles" value="{{ r }}"> {{ r }}</label>{% endfor %}
       </fieldset>
-      <label>Client (for client accounts only)
+      <label>Organization (for client accounts only)
         <select name="client_id"><option value="">—</option>{% for c in clients %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select>
       </label>
       <button>Add person</button>
     </form>
   </section>
-  <section class="card">
-    <h2>Add a client</h2>
-    <form method="post">
-      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="add_client">
-      <label>Client name <input name="name" required></label>
-      <label>Contact email (gets the sign-off notice) <input type="email" name="contact_email"></label>
-      <label>Tier
-        <select name="tier">{% for key, label in tiers.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select>
-      </label>
-      <button>Add client</button>
-    </form>
-    <h3>Clients and tiers</h3>
-    <p class="muted">The tier decides which report every user of that client can download.</p>
-    {% for c in clients %}
-      <form method="post" class="tier-row">
-        <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="set_tier">
-        <input type="hidden" name="client_id" value="{{ c.id }}">
-        <span><strong>{{ c.name }}</strong>{% if c.contact_email %}<br><span class="muted">{{ c.contact_email }}</span>{% endif %}</span>
-        <select name="tier" aria-label="Tier for {{ c.name }}">{% for key, label in tiers.items() %}<option value="{{ key }}" {% if c.tier == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
-        <button class="small secondary">Save</button>
-      </form>
-    {% else %}<p class="muted">None yet.</p>{% endfor %}
-  </section>
 </div>
 <section class="card">
   <h2>People</h2>
   <div class="table-wrap"><table class="list">
-    <thead><tr><th>Name</th><th>Email</th><th>Roles</th><th>Client</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Email</th><th>Roles</th><th>Organization</th><th>Status</th><th></th></tr></thead>
     {% for u in users %}
     <tr>
       <td>{{ u.name }}</td><td>{{ u.email }}</td><td>{{ u.roles.replace(',', ', ') }}</td><td>{{ u.client_name or '' }}</td>

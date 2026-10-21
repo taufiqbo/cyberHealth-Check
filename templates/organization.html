@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block topbar %}{{ BRAND }} administration{% endblock %}
+{% block content %}
+<p class="muted"><a href="{{ url_for('organizations') }}">← All organizations</a></p>
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Organization</p>
+    <h1>{{ org.name }}</h1>
+    <p><span class="tier-pill tier-{{ org.tier }}">{{ tiers[org.tier] }}</span>
+      {% if org.active %}<span class="state st-signed_off">Active</span>{% else %}<span class="state st-running">Suspended</span>{% endif %}</p>
+  </div>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="stat-label">Domains {{ icon('globe') }}</div><div class="stat-value">{{ domains|length }}</div><div class="stat-note">Assessed for this organization</div></div>
+  <div class="stat"><div class="stat-label">Assessments {{ icon('report') }}</div><div class="stat-value">{{ assessments|length }}</div><div class="stat-note">{{ assessments|selectattr('status', 'equalto', 'signed_off')|list|length }} signed off</div></div>
+  <div class="stat"><div class="stat-label">Users {{ icon('users') }}</div><div class="stat-value">{{ users|selectattr('active')|list|length }}</div><div class="stat-note">Active client accounts</div></div>
+  <div class="stat"><div class="stat-label">Plan {{ icon('shield') }}</div><div class="stat-value plan-value">{{ 'Comprehensive' if org.tier == 'comprehensive' else 'Complimentary' }}</div><div class="stat-note">Decides which reports users can download</div></div>
+</div>
+
+<div class="grid2">
+  <section class="card">
+    <h2>Organization access settings</h2>
+    <form method="post">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="save">
+      <label>Organization name <input name="name" value="{{ org.name }}" required></label>
+      <label>Contact email (gets the sign-off notice) <input type="email" name="contact_email" value="{{ org.contact_email or '' }}"></label>
+      <label>Plan
+        <select name="tier">{% for key, label in tiers.items() %}<option value="{{ key }}" {% if org.tier == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+      </label>
+      <button>Save organization</button>
+    </form>
+  </section>
+
+  <section class="card soft">
+    <h2>What this plan includes</h2>
+    {% if org.tier == 'comprehensive' %}
+      <ul class="plan-list">
+        <li>Full PDF report: findings register, detailed findings, roadmap, appendices</li>
+        <li>Plain-language summary slides with score by area and action plan</li>
+        <li>Dashboard and assessment history</li>
+      </ul>
+    {% else %}
+      <ul class="plan-list">
+        <li>Short PDF report: summary, key findings, priority recommendations</li>
+        <li>Plain-language summary slides (top 3 fixes)</li>
+        <li>Dashboard and assessment history</li>
+      </ul>
+    {% endif %}
+    <p class="muted">Changing the plan applies to every user of this organization from their next download.</p>
+    <form method="post" class="inline">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      {% if org.active %}
+        <button class="secondary small" name="action" value="suspend">Suspend access</button>
+      {% else %}
+        <button class="small" name="action" value="reactivate">Reactivate access</button>
+      {% endif %}
+    </form>
+  </section>
+</div>
+
+<section class="card">
+  <div class="section-head"><h2>Domains and assessments</h2>
+    {% if 'analyst' in roles %}<a class="button small" href="{{ url_for('new_assessment') }}">{{ icon('plus') }} New assessment</a>{% endif %}</div>
+  {% if assessments %}
+  <div class="table-wrap"><table class="list">
+    <thead><tr><th>#</th><th>Domain</th><th>Status</th><th>Score</th><th>Created</th></tr></thead>
+    {% for a in assessments %}
+    <tr><td>{{ a.id }}</td><td><a href="{{ url_for('assessment', aid=a.id) }}"><strong>{{ a.target }}</strong></a></td>
+      <td><span class="state st-{{ a.status }}">{{ STATUS_TEXT.get(a.status, a.status) }}</span></td>
+      <td>{% if a.score and a.score.score is not none %}<strong>{{ a.score.score }}</strong> ({{ a.score.grade }}){% else %}–{% endif %}</td>
+      <td>{{ a.created_at[:10] }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="muted">No assessments yet.</p>{% endif %}
+</section>
+
+<section class="card">
+  <div class="section-head"><h2>Users</h2><a class="button small secondary" href="{{ url_for('people') }}">{{ icon('plus') }} Add a user</a></div>
+  {% if users %}
+  <div class="table-wrap"><table class="list">
+    <thead><tr><th>Name</th><th>Email</th><th>Status</th></tr></thead>
+    {% for u in users %}<tr><td>{{ u.name }}</td><td>{{ u.email }}</td><td>{{ 'active' if u.active else 'deactivated' }}</td></tr>{% endfor %}
+  </table></div>
+  {% else %}<p class="muted">No client users yet. Add one under Team with the "client" role and this organization.</p>{% endif %}
+</section>
+{% endblock %}

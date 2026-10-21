@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block topbar %}{{ BRAND }} administration{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">{{ BRAND }} control center</p>
+    <h1>Organizations</h1>
+    <p class="lead">Manage customer access, plans and domains in one workspace.</p>
+  </div>
+  <a class="button" href="#add-org">{{ icon('plus') }} Add</a>
+</div>
+
+<form method="get" class="card org-picker">
+  <span class="org-picker-label">{{ icon('building') }} Organization</span>
+  <select name="org" aria-label="Show one organization">
+    <option value="">All organizations</option>
+    {% for o in all_orgs %}<option value="{{ o.id }}" {% if selected == o.id %}selected{% endif %}>{{ o.name }}</option>{% endfor %}
+  </select>
+  <button class="small secondary">Show</button>
+  {% if selected %}{% for o in all_orgs if o.id == selected %}<span class="tier-pill tier-{{ o.tier }}">{{ tiers[o.tier] }}</span>{% endfor %}{% endif %}
+</form>
+
+<section class="card">
+  {% if not orgs %}
+    <p class="muted">No organizations yet. Add the first one below.</p>
+  {% else %}
+  <div class="table-wrap">
+  <table class="list">
+    <thead><tr><th>Organization</th><th>Plan</th><th>Status</th><th>Domains</th><th>Assessments</th><th>Users</th><th></th></tr></thead>
+    <tbody>
+    {% for o in orgs %}
+      <tr>
+        <td><strong>{{ o.name }}</strong>{% if o.contact_email %}<br><span class="muted">{{ o.contact_email }}</span>{% endif %}</td>
+        <td><span class="tier-pill tier-{{ o.tier }}">{{ 'Comprehensive' if o.tier == 'comprehensive' else 'Complimentary' }}</span></td>
+        <td>{% if o.active %}Active{% else %}<span class="warn">Suspended</span>{% endif %}</td>
+        <td>{{ o.domains }}</td>
+        <td>{{ o.assessments }}</td>
+        <td>{{ o.users }}</td>
+        <td class="r"><a class="manage-link" href="{{ url_for('organization', cid=o.id) }}">Manage {{ icon('arrow') }}</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+</section>
+
+<section class="card narrow-left" id="add-org">
+  <h2>Add an organization</h2>
+  <form method="post">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>Organization name <input name="name" required></label>
+    <label>Contact email (gets the sign-off notice) <input type="email" name="contact_email"></label>
+    <label>Plan
+      <select name="tier">{% for key, label in tiers.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select>
+    </label>
+    <button>Add organization</button>
+  </form>
+</section>
+{% endblock %}

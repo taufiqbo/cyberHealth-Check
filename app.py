@@ -82,6 +82,10 @@ def register(app, service):
         uid = session.get("uid")
         if uid:
             user = db.one("SELECT * FROM users WHERE id = ? AND active = 1", (uid,))
+            if user and user["client_id"]:
+                org = db.one("SELECT active FROM clients WHERE id = ?", (user["client_id"],))
+                if org and not org["active"]:
+                    user = None
             if user:
                 g.user = user
                 g.roles = accounts.roles_of(user)
@@ -158,6 +162,10 @@ def register(app, service):
     def login():
         if request.method == "POST":
             user, error = accounts.authenticate(db, request.form.get("email"), request.form.get("password"))
+            if user and user["client_id"]:
+                org = db.one("SELECT active FROM clients WHERE id = ?", (user["client_id"],))
+                if org and not org["active"]:
+                    user, error = None, "Your organization's access is suspended. Contact your BINTARA account manager."
             if user:
                 session.clear()
                 session["uid"] = user["id"]
@@ -472,18 +480,7 @@ def register(app, service):
         if request.method == "POST":
             action = request.form.get("action")
             try:
-                if action == "add_client":
-                    name = request.form.get("name", "").strip()
-                    if not name:
-                        raise ValueError("Enter the client's name.")
-                    tier = request.form.get("tier", "complimentary")
-                    if tier not in TIERS:
-                        raise ValueError("Choose a tier.")
-                    cid = db.run("INSERT INTO clients (name, contact_email, created_at, tier) VALUES (?, ?, datetime('now'), ?)",
-                                 (name, request.form.get("contact_email", "").strip().lower() or None, tier))
-                    audit.record(db, "client.created", g.user, None, client_id=cid, name=name, tier=tier)
-                    flash(f"Client {name} added.", "ok")
-                elif action == "add_user":
+                if action == "add_user":
                     accounts.create_user(db, request.form.get("email"), request.form.get("name", ""),
                                          request.form.get("password"), request.form.getlist("roles"),
                                          int(request.form.get("client_id") or 0) or None, actor=g.user)
@@ -496,16 +493,6 @@ def register(app, service):
                     target = service.user(uid)
                     audit.record(db, f"user.{action}d", g.user, None, user=target["email"])
                     flash(f"{target['email']} {action}d.", "ok")
-                elif action == "set_tier":
-                    cid = int(request.form.get("client_id"))
-                    tier = request.form.get("tier")
-                    client = db.one("SELECT * FROM clients WHERE id = ?", (cid,))
-                    if not client or tier not in TIERS:
-                        raise ValueError("Choose a client and a tier.")
-                    db.update("clients", cid, tier=tier)
-                    audit.record(db, "client.tier_changed", g.user, None, client_id=cid, name=client["name"],
-                                 before=client["tier"], after=tier)
-                    flash(f"{client['name']} is now on the {TIERS[tier]} tier.", "ok")
                 elif action == "reset_password":
                     uid = int(request.form.get("user_id"))
                     accounts.set_password(db, uid, request.form.get("password"), g.user)
@@ -516,7 +503,87 @@ def register(app, service):
         users = db.all("SELECT u.*, c.name AS client_name FROM users u LEFT JOIN clients c ON c.id = u.client_id"
                        " ORDER BY u.active DESC, u.email")
         clients = db.all("SELECT * FROM clients ORDER BY name")
-        return render_template("people.html", users=users, clients=clients, all_roles=accounts.ALL_ROLES, tiers=TIERS)
+        return render_template("people.html", users=users, clients=clients, all_roles=accounts.ALL_ROLES)
+
+    # Organizations -------------------------------------------------------------
+    def org_form(require_name=True):
+        name = request.form.get("name", "").strip()
+        if require_name and not name:
+            raise ValueError("Enter the organization's name.")
+        tier = request.form.get("tier", "complimentary")
+        if tier not in TIERS:
+            raise ValueError("Choose a plan.")
+        email = request.form.get("contact_email", "").strip().lower() or None
+        if email and "@" not in email:
+            raise ValueError("Enter a valid contact email.")
+        return name, email, tier
+
+    @app.route("/admin/organizations", methods=["GET", "POST"])
+    @role_required("admin")
+    def organizations():
+        if request.method == "POST":
+            try:
+                name, email, tier = org_form()
+                if db.one("SELECT id FROM clients WHERE lower(name) = lower(?)", (name,)):
+                    raise ValueError("An organization with that name already exists.")
+                cid = db.run("INSERT INTO clients (name, contact_email, created_at, tier) VALUES (?, ?, datetime('now'), ?)",
+                             (name, email, tier))
+                audit.record(db, "client.created", g.user, None, client_id=cid, name=name, tier=tier)
+                flash(f"{name} added on the {TIERS[tier]} plan.", "ok")
+                return redirect(url_for("organization", cid=cid))
+            except ValueError as exc:
+                flash(str(exc), "error")
+            return redirect(url_for("organizations"))
+        orgs = db.all(
+            "SELECT c.*, (SELECT COUNT(DISTINCT target) FROM assessments a WHERE a.client_id = c.id) AS domains,"
+            " (SELECT COUNT(*) FROM assessments a WHERE a.client_id = c.id) AS assessments,"
+            " (SELECT COUNT(*) FROM users u WHERE u.client_id = c.id AND u.active = 1) AS users"
+            " FROM clients c ORDER BY c.active DESC, lower(c.name)")
+        selected = request.args.get("org", type=int)
+        if selected:
+            orgs = [o for o in orgs if o["id"] == selected] or orgs
+        all_orgs = db.all("SELECT id, name, tier FROM clients ORDER BY lower(name)")
+        return render_template("organizations.html", orgs=orgs, all_orgs=all_orgs, selected=selected, tiers=TIERS)
+
+    @app.route("/admin/organizations/<int:cid>", methods=["GET", "POST"])
+    @role_required("admin")
+    def organization(cid):
+        org = db.one("SELECT * FROM clients WHERE id = ?", (cid,))
+        if not org:
+            abort(404)
+        if request.method == "POST":
+            try:
+                action = request.form.get("action", "save")
+                if action == "save":
+                    name, email, tier = org_form()
+                    clash = db.one("SELECT id FROM clients WHERE lower(name) = lower(?) AND id != ?", (name, cid))
+                    if clash:
+                        raise ValueError("Another organization already has that name.")
+                    db.update("clients", cid, name=name, contact_email=email, tier=tier)
+                    changes = {k: [org[k], v] for k, v in (("name", name), ("contact_email", email), ("tier", tier))
+                               if org[k] != v}
+                    if changes:
+                        audit.record(db, "client.updated", g.user, None, client_id=cid, changes=changes)
+                    if org["tier"] != tier:
+                        audit.record(db, "client.tier_changed", g.user, None, client_id=cid, name=name,
+                                     before=org["tier"], after=tier)
+                    flash("Organization saved.", "ok")
+                elif action in ("suspend", "reactivate"):
+                    db.update("clients", cid, active=0 if action == "suspend" else 1)
+                    audit.record(db, f"client.{action}ed" if action == "suspend" else "client.reactivated", g.user,
+                                 None, client_id=cid, name=org["name"])
+                    flash(f"{org['name']} {'suspended: its users can no longer sign in' if action == 'suspend' else 'reactivated'}.",
+                          "ok")
+            except ValueError as exc:
+                flash(str(exc), "error")
+            return redirect(url_for("organization", cid=cid))
+        users = db.all("SELECT * FROM users WHERE client_id = ? ORDER BY active DESC, email", (cid,))
+        assessments = db.all("SELECT * FROM assessments WHERE client_id = ? ORDER BY id DESC", (cid,))
+        for a in assessments:
+            a["score"] = loads(a["score_json"]) if a["signed_off_at"] else None
+        domains = sorted({a["target"] for a in assessments})
+        return render_template("organization.html", org=org, users=users, assessments=assessments, domains=domains,
+                               tiers=TIERS)
 
     @app.route("/admin/audit")
     @role_required("admin")

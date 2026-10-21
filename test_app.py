@@ -542,11 +542,45 @@ def _download(c, url):
 def test_admin_sets_client_tier(demo):
     c = demo.test_client()
     login(c, "admin@demo.example", "demo-admin")
-    post(c, "/admin/people", action="set_tier", client_id="1", tier="comprehensive")
-    assert demo.extensions["runner"].db.one("SELECT tier FROM clients WHERE id = 1")["tier"] == "comprehensive"
-    assert demo.extensions["runner"].db.one("SELECT * FROM audit WHERE action = 'client.tier_changed'")
-    post(c, "/admin/people", action="add_client", name="New Co", tier="comprehensive")
-    assert demo.extensions["runner"].db.one("SELECT tier FROM clients WHERE name = 'New Co'")["tier"] == "comprehensive"
+    db = demo.extensions["runner"].db
+    post(c, "/admin/organizations/1", action="save", name="Client Example Ltd (fictional)",
+         contact_email=f"client@{DOMAIN}", tier="comprehensive")
+    assert db.one("SELECT tier FROM clients WHERE id = 1")["tier"] == "comprehensive"
+    assert db.one("SELECT * FROM audit WHERE action = 'client.tier_changed'")
+    resp = post(c, "/admin/organizations", name="New Co", tier="comprehensive", contact_email="")
+    new = db.one("SELECT * FROM clients WHERE name = 'New Co'")
+    assert new["tier"] == "comprehensive" and resp.headers["Location"].endswith(f"/admin/organizations/{new['id']}")
+    post(c, "/admin/organizations", name="new co", tier="complimentary")  # duplicate name refused
+    assert db.one("SELECT COUNT(*) AS n FROM clients WHERE lower(name) = 'new co'")["n"] == 1
+
+
+def test_organizations_pages_render_and_are_admin_only(demo):
+    c = demo.test_client()
+    login(c, "admin@demo.example", "demo-admin")
+    page = c.get("/admin/organizations").get_data(as_text=True)
+    assert "Client Example Ltd (fictional)" in page and "Complimentary" in page and "Manage" in page
+    assert c.get("/admin/organizations?org=1").status_code == 200
+    detail = c.get("/admin/organizations/1").get_data(as_text=True)
+    assert DOMAIN in detail and "Organization access settings" in detail
+    assert c.get("/admin/organizations/999").status_code == 404
+    other = demo.test_client()
+    login(other, "analyst@demo.example", "demo-analyst")
+    assert other.get("/admin/organizations").status_code == 403
+
+
+def test_suspended_organization_cannot_sign_in(demo):
+    admin = demo.test_client()
+    login(admin, "admin@demo.example", "demo-admin")
+    client = demo.test_client()
+    login(client, f"client@{DOMAIN}", "demo-client")
+    assert client.get("/").status_code == 200
+    post(admin, "/admin/organizations/1", action="suspend")
+    assert client.get("/").status_code == 302               # existing session ends
+    fresh = demo.test_client()
+    resp = login(fresh, f"client@{DOMAIN}", "demo-client")
+    assert resp.status_code == 200 and "suspended" in resp.get_data(as_text=True)
+    post(admin, "/admin/organizations/1", action="reactivate")
+    assert login(demo.test_client(), f"client@{DOMAIN}", "demo-client").status_code == 302
 
 
 def test_client_downloads_only_own_tier_after_signoff(demo):
